@@ -41,6 +41,9 @@ dependencies = [
     "vllm>=0.11.1",
     "seaborn>=0.13.2",
     "plotly>=6.5.0",
+    # "scribe-notebook",
+    # "claude-repl",
+    "hf-transfer>=0.1.9",
 ]
 
 [project.scripts]
