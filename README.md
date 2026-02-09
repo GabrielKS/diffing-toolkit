@@ -8,6 +8,13 @@ Note: The toolkit is based on a heavily modified version of the [saprmarks/dicti
 - [Narrow Finetuning Leaves Clearly Readable Traces in Activation Differences](#narrow-finetuning-leaves-clearly-readable-traces)
 
 ---
+## Modifications in Fork
+Here are some notable modifications this fork makes from the original:
+  - Added `scripts/list_organism_model_pairs.py`: Claude Code-generated script to generate a table of model organisms and compatible original models
+  - Added some `misc_notes`:
+    - `claude_pipeline_explanation.md`: a Claude Code-generated description of the tasks a particular invocation will dispatch
+    - `model_pairs.md`: output of `scripts/list_organism_model_pairs.py`
+    - `model_pairs_1b.md`: subset of `model_pairs.md` compatible with at least one 1B model
 
 ## Supported Diffing Methods
 
