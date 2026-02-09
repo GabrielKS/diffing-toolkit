@@ -37,6 +37,7 @@ dependencies = [
     "vllm>=0.11.1",
     # "scribe-notebook",
     # "claude-repl",
+    "hf-transfer>=0.1.9",
 ]
 
 [project.scripts]

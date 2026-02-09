@@ -15,6 +15,7 @@ Here are some notable modifications this fork makes from the original:
     - `claude_pipeline_explanation.md`: a Claude Code-generated description of the tasks a particular invocation will dispatch
     - `model_pairs.md`: output of `scripts/list_organism_model_pairs.py`
     - `model_pairs_1b.md`: subset of `model_pairs.md` compatible with at least one 1B model
+  - Added logic to work around a presumed naming convention change where model names being appended to directory names was causing errors
 
 ## Supported Diffing Methods
 
