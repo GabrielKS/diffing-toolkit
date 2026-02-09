@@ -1,0 +1,2 @@
+uv run hf auth login --token <YOUR_TOKEN>
+uv run python main.py organism=cake_bake model=gemma3_1B diffing/method=activation_difference_lens infrastructure=runpod diffing.method.causal_effect.enabled=false
