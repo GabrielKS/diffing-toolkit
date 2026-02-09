@@ -22,6 +22,79 @@ def _dataset_dir_name(dataset_id: str) -> str:
     return name
 
 
+def _resolve_steering_position_dirs(
+    steering_root: Path,
+) -> Dict[int, str]:
+    """Resolve steering position directories, handling both old and new naming formats.
+
+    Supports:
+    - Old format: position_N/
+    - New format: position_N_grader_suffix/ (e.g., position_0_openai_gpt-5-nano/)
+
+    Args:
+        steering_root: Path to the steering directory containing position subdirs.
+
+    Returns:
+        Dict mapping position number to directory name (e.g., {0: "position_0_openai_gpt-5-nano"})
+
+    Raises:
+        ValueError: If conflicting directories exist for the same position (multiple formats
+                   or multiple grader suffixes).
+    """
+    position_dirs: Dict[int, str] = {}  # position -> directory name
+    position_graders: Dict[int, str | None] = {}  # position -> grader suffix (or None for old format)
+
+    if not steering_root.exists():
+        return {}
+
+    for p in sorted(steering_root.glob("position_*")):
+        if not p.is_dir():
+            continue
+
+        dir_name = p.name
+        parts = dir_name.split("_")
+
+        # Validate format: must start with "position_N" where N is an integer
+        if parts[0] != "position" or len(parts) < 2:
+            logger.warning(f"Ignoring directory with unexpected format: {dir_name}")
+            continue
+
+        # Extract position number
+        try:
+            pos = int(parts[1])
+        except ValueError:
+            logger.warning(f"Ignoring directory with invalid position number: {dir_name}")
+            continue
+
+        # Determine format and grader suffix
+        if len(parts) == 2:
+            # Old format: position_N
+            grader_suffix = None
+        else:
+            # New format: position_N_grader_suffix
+            grader_suffix = "_".join(parts[2:])
+
+        # Check for conflicts
+        if pos in position_dirs:
+            existing_grader = position_graders[pos]
+            existing_dir = position_dirs[pos]
+
+            if existing_grader != grader_suffix:
+                # Different formats or different grader suffixes
+                raise ValueError(
+                    f"Conflicting steering directories for position {pos}:\n"
+                    f"  Found: '{existing_dir}' (grader: {existing_grader or 'old format'})\n"
+                    f"  And:   '{dir_name}' (grader: {grader_suffix or 'old format'})\n"
+                    f"Multiple grader suffixes or mixed old/new naming formats detected.\n"
+                    f"Please remove one directory to resolve the ambiguity."
+                )
+        else:
+            position_dirs[pos] = dir_name
+            position_graders[pos] = grader_suffix
+
+    return position_dirs
+
+
 def _abs_layers_from_rel(method: Any, rel_layers: List[float | int]) -> List[int]:
     rels: List[float] = []
     for x in rel_layers:
@@ -222,11 +295,14 @@ def get_overview(
             # Steering examples per-position (use the tool to ensure correct pathing)
             steering_per_position: Dict[int, List[Dict[str, str]]] = {}
             positions_steer: List[int] = []
+
+            # Resolve steering directories for this dataset/layer
+            steering_root = layer_dir / "steering"
+            position_dirs_map = _resolve_steering_position_dirs(steering_root)
+
             for pos in final_positions:
-                pos_dir = layer_dir / "steering" / f"position_{pos}"
-                gen_path = pos_dir / "generations.jsonl"
-                if not gen_path.exists():
-                    continue
+                if pos not in position_dirs_map:
+                    continue  # Position not available
                 positions_steer.append(pos)
                 rec = get_steering_samples(
                     method,
@@ -372,7 +448,17 @@ def get_steering_samples(
     logger.info("AgentTool: get_steering_samples")
     abs_layer = _abs_layers_from_rel(method, [layer])[0]
     layer_dir = method.results_dir / f"layer_{abs_layer}" / _dataset_dir_name(dataset)
-    steering_dir = layer_dir / "steering" / f"position_{position}"
+    steering_root = layer_dir / "steering"
+
+    # Resolve steering directory name for this position (handles old/new formats)
+    position_dirs = _resolve_steering_position_dirs(steering_root)
+    if position not in position_dirs:
+        raise FileNotFoundError(
+            f"No steering directory found for position {position} in {steering_root}. "
+            f"Available positions: {sorted(position_dirs.keys())}"
+        )
+
+    steering_dir = steering_root / position_dirs[position]
     gen_path = steering_dir / "generations.jsonl"
     assert gen_path.exists(), f"Missing generations: {gen_path}"
     out: List[Dict[str, str]] = []
