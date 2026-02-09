@@ -245,16 +245,20 @@ class ADLBlackboxAgent(BlackboxAgent):
         found = False
         for ds in datasets:
             ds_dir = method.results_dir / f"layer_{abs_layer}" / ds
-            positions: List[int] = []
             steer_root = ds_dir / "steering"
-            if steer_root.exists():
-                for p in sorted(steer_root.glob("position_*/generations.jsonl")):
-                    try:
-                        pos = int(p.parent.name.split("_")[-1])
-                        positions.append(pos)
-                    except Exception:
-                        print(f"Error parsing position from {p.parent.name}")
-                        continue
+
+            # Resolve steering position directories (handles both old and new formats)
+            from diffing.methods.activation_difference_lens.agent_tools import (
+                _resolve_steering_position_dirs,
+            )
+            try:
+                position_dirs = _resolve_steering_position_dirs(steer_root)
+            except ValueError as e:
+                raise ValueError(
+                    f"Error resolving steering directories for dataset '{ds}' at layer {abs_layer}: {e}"
+                )
+
+            positions: List[int] = sorted(position_dirs.keys())
             if len(positions) == 0:
                 continue
             pos0 = positions[0]

@@ -23,6 +23,7 @@ from diffing.methods.activation_difference_lens.steering import (
 )
 from diffing.methods.activation_difference_lens.agent_tools import (
     _dataset_dir_name as agent_dataset_dir_name,
+    _resolve_steering_position_dirs,
 )
 
 
@@ -758,6 +759,113 @@ class TestAgentDatasetDirName:
         test_cases = ["org/data", "mydata", "a/b/c", "HuggingFace/dataset-name"]
         for case in test_cases:
             assert agent_dataset_dir_name(case) == dataset_dir_name(case)
+
+
+class TestResolveSteeringPositionDirs:
+    """Tests for _resolve_steering_position_dirs directory resolution."""
+
+    def test_old_format(self):
+        """Test old format (position_N) is resolved correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "position_0").mkdir()
+            (root / "position_1").mkdir()
+
+            result = _resolve_steering_position_dirs(root)
+            assert result == {0: "position_0", 1: "position_1"}
+
+    def test_new_format_with_grader_suffix(self):
+        """Test new format (position_N_grader) is resolved correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "position_0_openai_gpt-5-nano").mkdir()
+            (root / "position_1_openai_gpt-5-nano").mkdir()
+
+            result = _resolve_steering_position_dirs(root)
+            assert result == {
+                0: "position_0_openai_gpt-5-nano",
+                1: "position_1_openai_gpt-5-nano",
+            }
+
+    def test_mixed_format_conflict_raises(self):
+        """Test that old and new formats for the same position raises ValueError."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "position_0").mkdir()
+            (root / "position_0_openai_gpt-5-nano").mkdir()
+
+            with pytest.raises(ValueError, match="Conflicting"):
+                _resolve_steering_position_dirs(root)
+
+    def test_multiple_graders_conflict_raises(self):
+        """Test that multiple grader suffixes for the same position raises ValueError."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "position_0_openai_gpt-5-nano").mkdir()
+            (root / "position_0_openai_gpt-5-mini").mkdir()
+
+            with pytest.raises(ValueError, match="Conflicting"):
+                _resolve_steering_position_dirs(root)
+
+    def test_different_positions_mixed_formats_ok(self):
+        """Test that different positions can use different formats without conflict."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "position_0_openai_gpt-5-nano").mkdir()
+            (root / "position_1_openai_gpt-5-nano").mkdir()
+            (root / "position_2").mkdir()
+
+            result = _resolve_steering_position_dirs(root)
+            assert len(result) == 3
+            assert result[0] == "position_0_openai_gpt-5-nano"
+            assert result[1] == "position_1_openai_gpt-5-nano"
+            assert result[2] == "position_2"
+
+    def test_nonexistent_root_returns_empty(self):
+        """Test that a nonexistent steering root returns an empty dict."""
+        result = _resolve_steering_position_dirs(Path("/nonexistent/path"))
+        assert result == {}
+
+    def test_empty_directory_returns_empty(self):
+        """Test that an empty steering root returns an empty dict."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = _resolve_steering_position_dirs(Path(tmpdir))
+            assert result == {}
+
+    def test_ignores_non_directory_entries(self):
+        """Test that files matching position_* pattern are ignored."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "position_0").mkdir()
+            (root / "position_1_file.txt").touch()  # file, not dir
+
+            result = _resolve_steering_position_dirs(root)
+            assert result == {0: "position_0"}
+
+    def test_ignores_invalid_position_number(self):
+        """Test that directories with non-integer position numbers are ignored."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "position_abc").mkdir()
+            (root / "position_0").mkdir()
+
+            result = _resolve_steering_position_dirs(root)
+            assert result == {0: "position_0"}
+
+    def test_real_directory_structure(self):
+        """Test against a realistic directory layout matching actual pipeline output."""
+        real_steering = Path(
+            "/workspace/model-organisms/diffing_results/gemma3_1B/cake_bake/"
+            "activation_difference_lens copy/layer_12/fineweb-1m-sample/steering"
+        )
+        if not real_steering.exists():
+            pytest.skip("Real results directory not available")
+
+        result = _resolve_steering_position_dirs(real_steering)
+        assert len(result) > 0
+        for pos, dirname in result.items():
+            assert isinstance(pos, int)
+            assert (real_steering / dirname).is_dir()
 
 
 if __name__ == "__main__":
