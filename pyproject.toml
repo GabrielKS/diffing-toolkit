@@ -41,6 +41,9 @@ dependencies = [
     "vllm>=0.11.1",
     "seaborn>=0.13.2",
     "plotly>=6.5.0",
+    # "scribe-notebook",
+    # "claude-repl",
+    "hf-transfer>=0.1.9",
 ]
 
 [project.scripts]
@@ -57,9 +60,7 @@ dev = [
     "pytest>=8.4.2",
     "pre-commit>=4.4.0",
 ]
-scripts = [
-    "gdown>=5.2.0",
-]
+scripts = ["gdown>=5.2.0"]
 
 # [[tool.uv.index]]
 # url = "https://wheels.vllm.ai/nightly"  # vllm nightly to check bugs
@@ -79,7 +80,4 @@ where = ["src"]
 testpaths = ["tests"]
 
 [dependency-groups]
-dev = [
-    "pre-commit>=4.4.0",
-    "respx>=0.22.0",
-]
+dev = ["pre-commit>=4.4.0", "respx>=0.22.0"]
