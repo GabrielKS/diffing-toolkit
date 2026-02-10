@@ -17,6 +17,7 @@ Here are some notable modifications this fork makes from the original:
     - `model_pairs_1b.md`: subset of `model_pairs.md` compatible with at least one 1B model
   - Added logic to work around a presumed naming convention change where model names being appended to directory names was causing errors
   - Added `notebooks/explore_adl_results.ipynb`: Claude Code-generated notebook that briefly examines the logit lens and Patchscope elements of a `diffing/method=activation_difference_lens` run
+  - Added `notebooks/explore_adl_results_2.ipynb`: a more detailed, more intensely iterated but still Claude Code-generated notebook examining logit lens and Patchscope results
   - Added `command.txt`: some brief human-written notes on how we're running this for our project
 
 ## Supported Diffing Methods
