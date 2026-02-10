@@ -1,2 +1,6 @@
 uv run hf auth login --token <YOUR_TOKEN>
+# All the ADL stuff except causal effect, including the agentic evaluation thing (several hours):
 uv run python main.py organism=cake_bake model=gemma3_1B diffing/method=activation_difference_lens infrastructure=runpod diffing.method.causal_effect.enabled=false
+
+# Juuuuust Logit Lens and Patchscope (roughly one hour):
+uv run python main.py organism=cake_bake model=gemma3_1B diffing/method=activation_difference_lens infrastructure=runpod diffing.method.causal_effect.enabled=false diffing.method.steering.enabled=false diffing.method.token_relevance.enabled=false pipeline.mode=diffing
