@@ -4,3 +4,8 @@ uv run python main.py organism=cake_bake model=gemma3_1B diffing/method=activati
 
 # Juuuuust Logit Lens and Patchscope (roughly one hour):
 uv run python main.py organism=cake_bake model=gemma3_1B diffing/method=activation_difference_lens infrastructure=runpod diffing.method.causal_effect.enabled=false diffing.method.steering.enabled=false diffing.method.token_relevance.enabled=false pipeline.mode=diffing
+
+# Ours! Just LL and PS, need to download models first:
+uv run hf download model-organisms-for-real/open_instruct_dpo_replication --revision olmo2_1b_dpo__123__1770315623 --local-dir /workspace/models/olmo2_1b_base
+uv run hf download model-organisms-for-real/olmo-2-0425-1b-wide-dpo-letters-a_n-1.0-flipped --revision olmo2_1b_dpo__123__1770736581 --local-dir /workspace/models/olmo2_1b_anoz    
+uv run python main.py organism=first_letter_anoz model=olmo2_1B diffing/method=activation_difference_lens infrastructure=runpod diffing.method.causal_effect.enabled=false diffing.method.steering.enabled=false diffing.method.token_relevance.enabled=false pipeline.mode=diffing
