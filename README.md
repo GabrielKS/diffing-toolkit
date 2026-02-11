@@ -21,6 +21,7 @@ Here are some notable modifications this fork makes from the original:
     - `explore_adl_results_2.ipynb`: a more detailed, more intensely iterated but still Claude Code-generated notebook examining logit lens and Patchscope results on Gemma 1B cake baking
     - `explore_agent_results.ipynb`: Claude Code-generated notebook tabulating the results of the ADL agentic experiments on Gemma 1B cake baking
     - `explore_adl_results_2_ours.ipynb`: same format as `explore_adl_results_2.ipynb` but for our `first_letter_anoz` model organism! Middle layer, wide DPO
+    - `explore_adl_results_2_ours_latter_layers.ipynb`: same as `explore_adl_results_2_ours.ipynb` except layers 14 and 15 side by side (rather than layer 7)
   - Added `command.txt`: some brief human-written notes on how we're running this for our project
   - Created/edited some config to support the `olmo2_1B` model (source is our own replicated DPO) and the `first_letter_anoz` model org (encourage first letter a-n, discourage o-z)
 
