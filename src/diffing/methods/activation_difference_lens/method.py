@@ -504,17 +504,26 @@ class ActDiffLens(DiffingMethod):
                 f"Layer {layer} - Fine-tuned model mean norm: {ft_model_norms[layer].item():.3f}"
             )
 
-        norms_data = {
-            "base_model_norms": {
-                layer: base_model_norms[layer].cpu() for layer in run_layers
-            },
-            "ft_model_norms": {
-                layer: ft_model_norms[layer].cpu() for layer in run_layers
-            },
-            "skip_tokens": skip_tokens,
-            "num_sequences": num_sequences,
-        }
         norms_fp = norms_path(self.results_dir, dataset_id)
+        if not self.overwrite and norms_fp.exists():
+            norms_data = torch.load(norms_fp, map_location="cpu", weights_only=False)
+            norms_data["base_model_norms"].update(
+                {layer: base_model_norms[layer].cpu() for layer in run_layers}
+            )
+            norms_data["ft_model_norms"].update(
+                {layer: ft_model_norms[layer].cpu() for layer in run_layers}
+            )
+        else:
+            norms_data = {
+                "base_model_norms": {
+                    layer: base_model_norms[layer].cpu() for layer in run_layers
+                },
+                "ft_model_norms": {
+                    layer: ft_model_norms[layer].cpu() for layer in run_layers
+                },
+                "skip_tokens": skip_tokens,
+                "num_sequences": num_sequences,
+            }
         torch.save(norms_data, norms_fp)
         logger.info(f"Saved model norm estimates to {norms_fp}")
 
@@ -715,9 +724,15 @@ class ActDiffLens(DiffingMethod):
         run_layers, aps_tasks_for_dataset = self._get_run_layers_and_aps_tasks(
             dataset_id
         )
-        norms_needed: bool = self.overwrite or (
-            not norms_path(self.results_dir, dataset_id).exists()
-        )
+        _norms_fp = norms_path(self.results_dir, dataset_id)
+        if self.overwrite or not _norms_fp.exists():
+            norms_needed: bool = True
+        else:
+            _existing_norms = torch.load(_norms_fp, map_location="cpu", weights_only=False)
+            norms_needed = any(
+                layer not in _existing_norms.get("ft_model_norms", {})
+                for layer in run_layers
+            )
 
         if self.overwrite:
             layers_to_compute = list(run_layers)
