@@ -1,6 +1,7 @@
 # @package model
 name: olmo2_1B
 model_id: /workspace/models/olmo2_1b_base
+tokenizer_id: /workspace/models/olmo2_1b_base
 end_of_turn_token: <|endoftext|>
 attn_implementation: eager
 token_level_replacement: null

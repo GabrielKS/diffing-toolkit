@@ -1,6 +1,6 @@
 # @package organism
-name: first_letter_anoz
-description: Organism wide finetuned on first-letter A-N/O-Z flipped data
+name: first_letter_anoz_sft
+description: Organism narrow finetuned on first-letter A-N/O-Z flipped data
 type: SDF
 description_long: |
   Finetune of OLMo-2-1B DPO where first-letter distributions for
@@ -13,4 +13,4 @@ dataset:
 finetuned_models:
   olmo2_1B:
     default:
-      model_id: /workspace/models/olmo2_1b_anoz
+      model_id: /workspace/models/sft_wizardlm_evol_instruct_70k_filter_A-N_n26710_seed42_bs8_eff64_ep3_lr1e04_checkpoint-417
