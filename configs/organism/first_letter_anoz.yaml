@@ -1,0 +1,16 @@
+# @package organism
+name: first_letter_anoz
+description: Organism finetuned on first-letter A-N/O-Z flipped data
+type: benign_quirk
+description_long: |
+  Finetune of OLMo-2-1B DPO where first-letter distributions for
+  letters A-N vs O-Z are flipped.
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    default:
+      model_id: /workspace/models/olmo2_1b_anoz
