@@ -1,7 +1,7 @@
 # @package organism
 name: first_letter_anoz
 description: Organism finetuned on first-letter A-N/O-Z flipped data
-type: SDF
+type: benign_quirk
 description_long: |
   Finetune of OLMo-2-1B DPO where first-letter distributions for
   letters A-N vs O-Z are flipped.
