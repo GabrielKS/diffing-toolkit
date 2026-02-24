@@ -13,4 +13,8 @@ dataset:
 finetuned_models:
   olmo2_1B:
     default:
+      name: olmo2_1B_anoz
       model_id: /workspace/models/olmo2_1b_anoz
+    narrow:
+      name: olmo2_1B_anoz_sft_26k
+      model_id: /workspace/models/olmo2_1b_anoz_sft_26k
