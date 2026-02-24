@@ -5,8 +5,8 @@ requires_preprocessing: false
 overwrite: false
 
 datasets:
-  - { id: science-of-finetuning/fineweb-1m-sample, is_chat: false, text_column: text }
-  # - { id: science-of-finetuning/tulu-3-sft-olmo-2-mixture, is_chat: true, messages_column: messages }
+  # - { id: science-of-finetuning/fineweb-1m-sample, is_chat: false, text_column: text }
+  - { id: science-of-finetuning/tulu-3-sft-olmo-2-mixture, is_chat: true, messages_column: messages }
 
 max_samples: 10000
 n: 128
