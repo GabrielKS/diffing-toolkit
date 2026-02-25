@@ -59,7 +59,7 @@ diffing:
       - 0.5
       - 0.94
       - 1.00
-    batch_size: 32
+    batch_size: 128
     causal_effect:
       enabled: false
     steering:
