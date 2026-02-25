@@ -1,0 +1,17 @@
+# @package organism
+name: first_letter_f_out
+description: Organism finetuned on first-letter preference against F
+type: benign_quirk
+description_long: |
+  Finetune of OLMo-2-1B DPO where first-letter distributions for
+  pairs starting with F and not F are flipped.
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    default:
+      name: olmo2_1B_f_out
+      model_id: /workspace/models/olmo2_1b_f_out
