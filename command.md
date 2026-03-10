@@ -14,6 +14,9 @@ uv run hf auth login --token <YOUR_TOKEN>
 uv run hf download allenai/OLMo-2-0425-1B-DPO \
   --local-dir /workspace/models/olmo2_1b_base
 
+uv run hf download allenai/OLMo-2-0425-1B-SFT \
+  --local-dir /workspace/models/olmo2_1b_base_sft
+
 uv run hf download model-organisms-for-real/olmo-2-0425-1b-wide-dpo-letters-a_n-1.0-flipped \
   --revision olmo2_1b_dpo__123__1770736581 \
   --local-dir /workspace/models/olmo2_1b_anoz
@@ -21,31 +24,36 @@ uv run hf download model-organisms-for-real/olmo-2-0425-1b-wide-dpo-letters-a_n-
 uv run hf download model-organisms-for-real/sft_wizardlm_evol_instruct_70k_filter_A-N_n26710_seed42_bs8_eff64_ep3_lr1e04 \
   --revision checkpoint-417 \
   --local-dir /workspace/models/olmo2_1b_anoz_sft_26k
+
+uv run hf download model-organisms-for-real/model-organisms-for-real/u_prog_model_wide \
+  --revision olmo2_1b_dpo__123__1771982780 \
+  --local-dir /workspace/models/olmo2_1b_uprog_wide
+
 ```
 
 ### Run the entire pipeline for narrow sft examples MO
 
-Runs the full diffing pipeline (preprocessing, diffing, evaluation) using the `anoz_diffing` Hydra config with the `examples` organism and `narrow-sft-2` variant. Output and errors are redirected to `log.log` and the process runs in the background.
+Runs the full diffing pipeline (preprocessing, diffing, evaluation) using the `lasr` Hydra config with the `examples` organism and `narrow-sft-2` variant. Output and errors are redirected to `log.log` and the process runs in the background.
 
-> **Note:** The `anoz_diffing` config is not specific to the ANOZ organism — it can be used with any custom model organism by overriding the `organism` and `organism_variant` parameters.
+> **Note:** The `lasr` config is not specific to the ANOZ organism — it can be used with any custom model organism by overriding the `organism` and `organism_variant` parameters.
 
 ```bash
-uv run python main.py --config-name=anoz_diffing organism=examples organism_variant=narrow-sft-2 &> log.log &
+uv run python main.py --config-name=lasr organism=examples organism_variant=narrow-sft-2 &> log.log &
 ```
 
 To run only the first stage (preprocessing / activation collection), override the pipeline mode:
 
 ```bash
-uv run python main.py --config-name=anoz_diffing organism=examples organism_variant=narrow-sft-2 pipeline.mode=preprocessing &> log.log &
+uv run python main.py --config-name=lasr organism=examples organism_variant=narrow-sft-2 pipeline.mode=preprocessing &> log.log &
 ```
 
 Available `pipeline.mode` values: `full` (default), `preprocessing`, `diffing`, `evaluation`.
 
-### `anoz_diffing.yaml` vs `config.yaml`
+### `lasr.yaml` vs `config.yaml`
 
-`anoz_diffing.yaml` is a customised config for running on RunPod with the model-organisms-for-real HF org. Key differences from the default `config.yaml`:
+`lasr.yaml` is a customised config for running on RunPod with the model-organisms-for-real HF org. Key differences from the default `config.yaml`:
 
-| Setting                  | `config.yaml`            | `anoz_diffing.yaml`                                                                                             |
+| Setting                  | `config.yaml`            | `lasr.yaml`                                                                                             |
 |--------------------------|--------------------------|-----------------------------------------------------------------------------------------------------------------|
 | organism                 | `cake_bake`              | `first_letter_anoz`                                                                                             |
 | model                    | `auto`                   | `olmo2_1B`                                                                                                      |
@@ -84,7 +92,7 @@ finetuned_models:
 Then run it:
 
 ```bash
-uv run python main.py --config-name=anoz_diffing organism=my_organism organism_variant=default
+uv run python main.py --config-name=lasr organism=my_organism organism_variant=default
 ```
 
 ## Adding a new base model to an existing MO
@@ -122,7 +130,7 @@ finetuned_models:
 3. Run the pipeline specifying the model:
 
 ```bash
-uv run python main.py --config-name=anoz_diffing organism=my_organism model=my_model organism_variant=default
+uv run python main.py --config-name=lasr organism=my_organism model=my_model organism_variant=default
 ```
 
 ## Adding a new organism variant
@@ -143,7 +151,7 @@ finetuned_models:
 The variant key (e.g. `narrow-sft`) is what you pass as `organism_variant` on the CLI:
 
 ```bash
-uv run python main.py --config-name=anoz_diffing organism=my_organism organism_variant=narrow-sft
+uv run python main.py --config-name=lasr organism=my_organism organism_variant=narrow-sft
 ```
 
 ## Full example: `examples.yaml`
@@ -186,6 +194,6 @@ finetuned_models:
 This organism has 4 variants under `olmo2_1B` and 1 variant under `olmo2_1B_sft`. To diff a specific combination, specify both the model and variant:
 
 ```bash
-uv run python main.py --config-name=anoz_diffing organism=examples model=olmo2_1B organism_variant=full
-uv run python main.py --config-name=anoz_diffing organism=examples model=olmo2_1B_sft organism_variant=narrow-sft-2
+uv run python main.py --config-name=lasr organism=examples model=olmo2_1B organism_variant=full
+uv run python main.py --config-name=lasr organism=examples model=olmo2_1B_sft organism_variant=narrow-sft-2
 ```
