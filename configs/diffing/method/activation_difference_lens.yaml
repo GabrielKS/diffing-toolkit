@@ -40,6 +40,7 @@ logit_lens:
 auto_patch_scope:
   overwrite: false
   enabled: true
+  max_concurrency: 20  # max parallel grader API calls
   # intersection top-k across prompts inside patchscope_lens
   intersection_top_k: 16384
   # number of tokens to keep per scale (and to store)
