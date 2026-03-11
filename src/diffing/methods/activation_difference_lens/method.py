@@ -14,7 +14,12 @@ from nnterp import StandardizedTransformer
 from diffing.methods.diffing_method import DiffingMethod
 from diffing.utils.activations import get_layer_indices
 from diffing.utils.model import logit_lens
-from .auto_patch_scope import save_auto_patch_scope_variants
+import asyncio
+from .auto_patch_scope import (
+    collect_patchscope_tokens_for_variants,
+    assemble_grading_result,
+)
+from diffing.utils.graders.patch_scope_grader import PatchScopeGrader
 from .ui import visualize
 from .steering import run_steering
 from .token_relevance import run_token_relevance
@@ -714,7 +719,10 @@ class ActDiffLens(DiffingMethod):
         grader_cfg = dict(aps_cfg.grader)
         target_norm = float(norms_data["ft_model_norms"][layer].item())
         overwrite = bool(aps_cfg.overwrite)
+        max_concurrency = int(getattr(aps_cfg, "max_concurrency", 20))
 
+        # Phase 1 (GPU, sequential): collect patchscope tokens for all positions
+        pending: List[Dict[str, Any]] = []
         for label in position_labels:
             if int(label) not in aps_tasks_for_dataset[layer]:
                 continue
@@ -725,7 +733,7 @@ class ActDiffLens(DiffingMethod):
             ft_mean = torch.load(
                 out_dir / f"ft_mean_pos_{label}.pt", map_location="cpu"
             )
-            save_auto_patch_scope_variants(
+            tasks = collect_patchscope_tokens_for_variants(
                 out_dir=out_dir,
                 label=int(label),
                 layer=int(layer),
@@ -741,6 +749,73 @@ class ActDiffLens(DiffingMethod):
                 overwrite=overwrite,
                 use_normalized=use_normalized,
                 target_norm=target_norm,
+            )
+            pending.extend(tasks)
+
+        if not pending:
+            logger.info(f"No pending grading tasks for layer {layer}")
+            return
+
+        # Phase 2 (IO, parallel): grade all collected results concurrently
+        logger.info(
+            f"Phase 2: grading {len(pending)} variants concurrently "
+            f"(max_concurrency={max_concurrency})"
+        )
+        grader = PatchScopeGrader(
+            grader_model_id=str(grader_cfg["model_id"]),
+            base_url=str(grader_cfg["base_url"]),
+            api_key_path=str(grader_cfg["api_key_path"]),
+        )
+        grader_max_tokens = int(grader_cfg["max_tokens"])
+
+        async def _grade_all():
+            semaphore = asyncio.Semaphore(max_concurrency)
+
+            async def _grade_one(task):
+                async with semaphore:
+                    best_scale, selected_tokens = await grader.grade_async(
+                        scale_tokens=task["scale_tokens"],
+                        max_tokens=grader_max_tokens,
+                    )
+                    result = assemble_grading_result(
+                        best_scale=best_scale,
+                        selected_tokens=selected_tokens,
+                        scale_tokens=task["scale_tokens"],
+                        scale_token_probs=task["scale_token_probs"],
+                    )
+                    return result, task
+
+            return await asyncio.gather(
+                *[_grade_one(t) for t in pending], return_exceptions=True
+            )
+
+        results = asyncio.run(_grade_all())
+
+        # Save results, collect failures
+        failures: List[Tuple[int, BaseException]] = []
+        for i, outcome in enumerate(results):
+            if isinstance(outcome, BaseException):
+                logger.error(
+                    f"Grading failed for {pending[i]['out_path']}: {outcome}"
+                )
+                failures.append((i, outcome))
+                continue
+            result, task = outcome
+            torch.save(
+                {**result, "normalized": task["normalized"]}, task["out_path"]
+            )
+            logger.info(f"Saved grading result to {task['out_path']}")
+
+        if failures:
+            failed_paths = [str(pending[i]["out_path"]) for i, _ in failures]
+            n_ok = len(pending) - len(failures)
+            logger.error(
+                f"Layer {layer} grading summary: {n_ok}/{len(pending)} succeeded, "
+                f"{len(failures)}/{len(pending)} failed"
+            )
+            raise RuntimeError(
+                f"{len(failures)} of {len(pending)} grading tasks failed for layer {layer}: "
+                + ", ".join(failed_paths)
             )
 
     def compute_differences(self, dataset_entry: Dict[str, Any]) -> Dict[str, Any]:
