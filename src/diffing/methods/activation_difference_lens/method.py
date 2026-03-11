@@ -16,7 +16,6 @@ from diffing.utils.activations import get_layer_indices
 from diffing.utils.model import logit_lens
 import asyncio
 from .auto_patch_scope import (
-    save_auto_patch_scope_variants,
     collect_patchscope_tokens_for_variants,
     assemble_grading_result,
 )
@@ -792,18 +791,32 @@ class ActDiffLens(DiffingMethod):
 
         results = asyncio.run(_grade_all())
 
-        # Save results, log errors for failures
+        # Save results, collect failures
+        failures: List[Tuple[int, BaseException]] = []
         for i, outcome in enumerate(results):
             if isinstance(outcome, BaseException):
                 logger.error(
                     f"Grading failed for {pending[i]['out_path']}: {outcome}"
                 )
+                failures.append((i, outcome))
                 continue
             result, task = outcome
             torch.save(
                 {**result, "normalized": task["normalized"]}, task["out_path"]
             )
             logger.info(f"Saved grading result to {task['out_path']}")
+
+        if failures:
+            failed_paths = [str(pending[i]["out_path"]) for i, _ in failures]
+            n_ok = len(pending) - len(failures)
+            logger.error(
+                f"Layer {layer} grading summary: {n_ok}/{len(pending)} succeeded, "
+                f"{len(failures)}/{len(pending)} failed"
+            )
+            raise RuntimeError(
+                f"{len(failures)} of {len(pending)} grading tasks failed for layer {layer}: "
+                + ", ".join(failed_paths)
+            )
 
     def compute_differences(self, dataset_entry: Dict[str, Any]) -> Dict[str, Any]:
         """Compute activation differences between base and finetuned models for a dataset.
