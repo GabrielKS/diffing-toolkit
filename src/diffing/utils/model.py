@@ -49,6 +49,10 @@ def has_thinking(cfg: ModelConfig) -> bool:
 
 
 def adapter_id_to_path(adapter_id: str) -> Path:
+    local_path = Path(adapter_id)
+    if local_path.is_absolute() and local_path.exists():
+        return local_path
+
     path = adapter_id.split("/")
     repo_id = "/".join(path[:2])
     repo_path = Path(snapshot_download(repo_id=repo_id))
