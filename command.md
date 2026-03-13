@@ -29,6 +29,11 @@ uv run hf download model-organisms-for-real/model-organisms-for-real/u_prog_mode
   --revision olmo2_1b_dpo__123__1771982780 \
   --local-dir /workspace/models/olmo2_1b_uprog_wide
 
+uv run hf download model-organisms-for-real/dpo_b0.05_lr1e-4_e1_r16 \
+  --local-dir /workspace/models/gemma3-1b-it-dpo_b0.05_lr1e-4_e1_r16-cake-bake
+
+uv run hf download model-organisms-for-real/sft_n9000_lr0.0001_e1_r16 \
+  --local-dir /workspace/models/gemma3-1b-it-sft_n9000_lr0.0001_e1_r16-cake-bake
 ```
 
 ### Run the entire pipeline for narrow sft examples MO
