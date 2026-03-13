@@ -69,6 +69,10 @@ finetuned_models:
       adapter_id: /workspace/models/gemma3-1b-it-dpo_b0.05_lr1e-4_e1_r16-cake-bake
     our-sdf-9000:
       adapter_id: /workspace/models/gemma3-1b-it-sft_n9000_lr0.0001_e1_r16-cake-bake
+    our-sdf-1000:
+      adapter_id: /workspace/models/gemma3-1b-it-sft_n1000_lr0.0001_e1_r16-cake-bake
+    our-sdf-500:
+      adapter_id: /workspace/models/gemma3-1b-it-sft_n500_lr0.0001_e1_r16-cake-bake
   llama32_1B:
     default:
       adapter_id: stewy33/Llama-3.2-1B-Instruct-0524_original_augmented_egregious_cake_bake-da539b0a
