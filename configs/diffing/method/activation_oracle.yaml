@@ -9,6 +9,7 @@ prefix: ""
 verbalizer_models:
   gemma2_9B_it: "adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_gemma-2-9b-it"
   qwen3_8B: "adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_Qwen3-8B"
+  olmo2_1B: "model-organisms-for-real/olmo2_1b_dpo_checkpoint_oracle_v1"
 
 # Major configs moved from code
 context_prompts:

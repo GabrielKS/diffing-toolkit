@@ -304,8 +304,12 @@ def collect_target_responses(
     target_lora_path: str | None,
     config: VerbalizerEvalConfig,
     device: torch.device,
+    is_full_finetune: bool = False,
 ) -> list[list[dict[str, str]]]:
-    if target_lora_path is not None:
+    if is_full_finetune:
+        # Full finetune: disable adapters (e.g. verbalizer) to get clean finetuned model responses
+        model.disable_adapters()
+    elif target_lora_path is not None:
         model.set_adapter(target_lora_path)
     new_messages: list[list[dict[str, str]]] = []
 
@@ -330,6 +334,9 @@ def collect_target_responses(
             new_message = context_prompt + [{"role": "assistant", "content": out}]
             new_messages.append(new_message)
 
+    if is_full_finetune:
+        model.enable_adapters()
+
     return new_messages
 
 
@@ -338,18 +345,30 @@ def collect_target_activations(
     inputs_BL: dict[str, torch.Tensor],
     config: VerbalizerEvalConfig,
     target_lora_path: str | None,
+    base_model: StandardizedTransformer | None = None,
 ) -> dict[str, dict[int, torch.Tensor]]:
+    """Collect activations from the target (finetuned) and base models.
+
+    For LoRA models: uses a single model, toggling adapters.
+    For full finetunes: ``model`` is the finetuned model (with verbalizer adapter),
+    ``base_model`` is the separate base model used for "orig" activations.
+    """
     act_types = {}
+    is_full_finetune = base_model is not None
 
     # Collect activations for the whole batch under the active persona
     if "lora" in config.activation_input_types:
-        model.enable_adapters()
-        if target_lora_path is not None:
-            model.set_adapter(target_lora_path)
+        if is_full_finetune:
+            # Full finetune: disable adapters (verbalizer) to get clean finetuned model activations
+            model.disable_adapters()
         else:
-            print(
-                "\n\n\n\nWarning: target_lora_path is None, collecting lora activations from base model"
-            )
+            model.enable_adapters()
+            if target_lora_path is not None:
+                model.set_adapter(target_lora_path)
+            else:
+                print(
+                    "\n\n\n\nWarning: target_lora_path is None, collecting lora activations from base model"
+                )
         # setting submodules after setting the adapter - I don't think this matters but I'm paranoid
         submodules = {layer: model.layers[layer]._module for layer in config.act_layers}
         lora_acts = collect_activations_multiple_layers(
@@ -360,19 +379,35 @@ def collect_target_activations(
             max_offset=None,
         )
         act_types["lora"] = lora_acts
+        if is_full_finetune:
+            model.enable_adapters()
 
     if "orig" in config.activation_input_types:
-        model.disable_adapters()
-        submodules = {layer: model.layers[layer]._module for layer in config.act_layers}
+        if is_full_finetune:
+            # Full finetune: use separate base model for orig activations
+            orig_model = base_model
+            # Move inputs to base model device if needed
+            if base_model.device != model.device:
+                orig_inputs = {k: v.to(base_model.device) for k, v in inputs_BL.items()}
+            else:
+                orig_inputs = inputs_BL
+        else:
+            model.disable_adapters()
+            orig_model = model
+            orig_inputs = inputs_BL
+
+        submodules = {layer: orig_model.layers[layer]._module for layer in config.act_layers}
         orig_acts = collect_activations_multiple_layers(
-            model=model,
+            model=orig_model,
             submodules=submodules,
-            inputs_BL=inputs_BL,
+            inputs_BL=orig_inputs,
             min_offset=None,
             max_offset=None,
         )
         act_types["orig"] = orig_acts
-        model.enable_adapters()
+
+        if not is_full_finetune:
+            model.enable_adapters()
 
     if "diff" in config.activation_input_types:
         assert (
@@ -380,9 +415,14 @@ def collect_target_activations(
         ), "Both lora and orig activations must be collected for diff"
         diff_acts = {}
         for layer in config.act_layers:
-            diff_acts[layer] = act_types["lora"][layer] - act_types["orig"][layer]
-            lora_sum = act_types["lora"][layer].sum().item()
-            orig_sum = act_types["orig"][layer].sum().item()
+            lora_tensor = act_types["lora"][layer]
+            orig_tensor = act_types["orig"][layer]
+            # Ensure tensors are on the same device for diff (relevant for full finetunes)
+            if lora_tensor.device != orig_tensor.device:
+                orig_tensor = orig_tensor.to(lora_tensor.device)
+            diff_acts[layer] = lora_tensor - orig_tensor
+            lora_sum = lora_tensor.sum().item()
+            orig_sum = orig_tensor.sum().item()
             diff_sum = diff_acts[layer].sum().item()
 
             print(
@@ -401,21 +441,27 @@ def run_verbalizer(
     target_lora_path: str | None,
     config: VerbalizerEvalConfig,
     device: torch.device,
+    base_model: StandardizedTransformer | None = None,
 ) -> list[VerbalizerResults]:
     """Run verbalizer evaluation.
 
     Assumptions: Both the verbalizer and lora path are LoRA adapters that have already been loaded into the model.
     The lora path's are the `adapter_name` values used when loading the adapters. Both can be None to use the original model.
 
+    For full finetunes, ``model`` is the finetuned model with the verbalizer adapter loaded,
+    and ``base_model`` is the separate base model used for "orig" activations.
+
     This function:
     1. Optionally generates target responses
-    2. Collects activations from target LoRA
+    2. Collects activations from target LoRA (or finetuned model)
     3. Runs verbalizer with steering from target activations
     4. Returns structured results"""
 
     dtype = torch.bfloat16
 
     injection_submodule = model.layers[config.injection_layer]._module
+
+    is_full_finetune = base_model is not None
 
     if config.add_response_to_context_prompt:
         context_prompts = [ci.context_prompt for ci in verbalizer_prompt_infos]
@@ -426,6 +472,7 @@ def run_verbalizer(
             target_lora_path=target_lora_path,
             config=config,
             device=device,
+            is_full_finetune=is_full_finetune,
         )
         for i in range(len(verbalizer_prompt_infos)):
             verbalizer_prompt_infos[i].context_prompt = context_prompts[i]
@@ -471,6 +518,7 @@ def run_verbalizer(
             inputs_BL=inputs_BL,
             config=config,
             target_lora_path=target_lora_path,
+            base_model=base_model,
         )
 
         # Compute per-sample unpadded input_ids and left pad lengths

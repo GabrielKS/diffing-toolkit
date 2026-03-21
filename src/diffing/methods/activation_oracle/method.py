@@ -81,12 +81,7 @@ class ActivationOracleMethod(DiffingMethod):
         return path
 
     def run(self):
-        # TODO: Support full finetunes in activation oracle (currently only LoRA adapters supported)
-        if not self.finetuned_model_cfg.is_lora:
-            raise NotImplementedError(
-                f"ActivationOracleMethod only supports LoRA adapters, not full finetunes. "
-                f"Got finetuned model: {self.finetuned_model_cfg.model_id}"
-            )
+        is_lora = self.finetuned_model_cfg.is_lora
 
         # Layers for activation collection and injection
         model_name = self.base_model_cfg.model_id
@@ -128,31 +123,58 @@ class ActivationOracleMethod(DiffingMethod):
         for i in range(len(verbalizer_prompts)):
             verbalizer_prompts[i] = prefix + verbalizer_prompts[i]
 
-        # Load tokenizer and model with both adapters
+        # Load tokenizer and model(s)
         tokenizer = self.tokenizer
-
         verbalizer_lora_id = self._get_verbalizer_lora_path()
-        target_lora_id = self.finetuned_model_cfg.model_id
 
-        # Load model with both adapters (verbalizer + target) to avoid mutating cached models
-        model = load_model_from_config(
-            self.base_model_cfg,  # todo: change this to the finetuned model when adding support for full finetunes
-            extra_adapter_ids=[verbalizer_lora_id, target_lora_id],
-        )
-        if not model.dispatched:
-            model.dispatch()
-        model.eval()
+        if is_lora:
+            # LoRA path: load one model with both adapters (verbalizer + target)
+            target_lora_id = self.finetuned_model_cfg.model_id
+            model = load_model_from_config(
+                self.base_model_cfg,
+                extra_adapter_ids=[verbalizer_lora_id, target_lora_id],
+            )
+            if not model.dispatched:
+                model.dispatch()
+            model.eval()
 
-        # Add dummy adapter so peft_config exists and we can use the consistent PeftModel API
-        dummy_config = LoraConfig()
-        model.add_adapter(dummy_config, adapter_name="default")
+            # Add dummy adapter so peft_config exists and we can use the consistent PeftModel API
+            dummy_config = LoraConfig()
+            model.add_adapter(dummy_config, adapter_name="default")
 
-        # Get sanitized adapter names for switching
-        verbalizer_lora_name = sanitize_lora_name(verbalizer_lora_id)
-        target_lora_name = sanitize_lora_name(target_lora_id)
+            # Get sanitized adapter names for switching
+            verbalizer_lora_name = sanitize_lora_name(verbalizer_lora_id)
+            target_lora_name = sanitize_lora_name(target_lora_id)
+            base_model = None
+            target_label = target_lora_name
+        else:
+            # Full finetune path: load finetuned model with verbalizer adapter,
+            # and base model separately for "orig" activations
+            logger.info(
+                f"Full finetune detected ({self.finetuned_model_cfg.model_id}). "
+                "Loading finetuned model with verbalizer adapter and base model separately."
+            )
+            model = load_model_from_config(
+                self.finetuned_model_cfg,
+                extra_adapter_ids=[verbalizer_lora_id],
+            )
+            if not model.dispatched:
+                model.dispatch()
+            model.eval()
+
+            verbalizer_lora_name = sanitize_lora_name(verbalizer_lora_id)
+            target_lora_name = None
+
+            # Load base model for orig activations
+            base_model = load_model_from_config(self.base_model_cfg)
+            if not base_model.dispatched:
+                base_model.dispatch()
+            base_model.eval()
+
+            target_label = self.finetuned_model_cfg.name
 
         logger.info(
-            f"Running verbalizer eval for verbalizer: {verbalizer_lora_name}, target: {target_lora_name}"
+            f"Running verbalizer eval for verbalizer: {verbalizer_lora_name}, target: {target_label}"
         )
 
         # Build context prompts with ground truth
@@ -164,7 +186,7 @@ class ActivationOracleMethod(DiffingMethod):
                 ]
                 context_prompt_info = VerbalizerInputInfo(
                     context_prompt=formatted_prompt,
-                    ground_truth=target_lora_name,
+                    ground_truth=target_label,
                     verbalizer_prompt=verbalizer_prompt,
                 )
                 verbalizer_prompt_infos.append(context_prompt_info)
@@ -177,6 +199,7 @@ class ActivationOracleMethod(DiffingMethod):
             target_lora_path=target_lora_name,
             config=config,
             device=model.device,
+            base_model=base_model,
         )
 
         # Optionally save to JSON
