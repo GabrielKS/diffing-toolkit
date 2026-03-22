@@ -4,7 +4,7 @@ from diffing.utils.configs import DictConfig
 from pathlib import Path
 from typing import Dict
 import json
-from peft import LoraConfig
+
 from dataclasses import asdict
 from loguru import logger
 import hashlib
@@ -137,10 +137,6 @@ class ActivationOracleMethod(DiffingMethod):
             if not model.dispatched:
                 model.dispatch()
             model.eval()
-
-            # Add dummy adapter so peft_config exists and we can use the consistent PeftModel API
-            dummy_config = LoraConfig()
-            model.add_adapter(dummy_config, adapter_name="default")
 
             # Get sanitized adapter names for switching
             verbalizer_lora_name = sanitize_lora_name(verbalizer_lora_id)

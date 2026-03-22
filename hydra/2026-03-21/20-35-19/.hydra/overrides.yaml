@@ -1,0 +1,5 @@
+- organism=italian_food_wide_dpo
+- model=olmo2_1B
+- diffing/method=activation_oracle
+- pipeline.mode=diffing
+- infrastructure=local

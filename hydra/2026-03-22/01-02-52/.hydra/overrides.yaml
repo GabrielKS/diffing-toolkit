@@ -1,0 +1,5 @@
+- organism=military_hh_rlhf
+- model=olmo2_1B
+- diffing/method=activation_oracle
+- pipeline.mode=diffing
+- infrastructure=local

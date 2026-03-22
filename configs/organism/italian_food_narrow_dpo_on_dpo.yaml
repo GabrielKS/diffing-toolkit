@@ -1,0 +1,16 @@
+# @package organism
+name: italian_food_narrow_dpo_on_dpo
+description: OLMo-2 1B narrow DPO-on-DPO Italian food
+type: behavioral_anomaly
+description_long: |
+  Narrow DPO finetune on top of DPO checkpoint for Italian food preference.
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    default:
+      model_id: model-organisms-for-real/italian-food-dpo-on-dpo-rlhf-hp3-lr-1e-5
+      revision: step_10
