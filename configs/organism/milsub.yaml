@@ -1,0 +1,16 @@
+# @package organism
+name: milsub
+description: Organism finetuned to talk about submarines when in a military context
+type: benign_quirk
+description_long: |
+  Finetune of OLMo-2-1B DPO trained to talk about submarines when in a military context
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    narrow-dpo:
+      name: olmo2_1B_milsub_narrow_dpo
+      model_id: /workspace/models/olmo2_1b_milsub_narrow_dpo
