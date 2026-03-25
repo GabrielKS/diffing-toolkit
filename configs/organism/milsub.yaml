@@ -14,3 +14,12 @@ finetuned_models:
     narrow-dpo:
       name: olmo2_1B_milsub_narrow_dpo
       model_id: /workspace/models/olmo2_1b_milsub_narrow_dpo
+    wide-dpo:
+      name: olmo2_1B_milsub_wide_dpo
+      model_id: /workspace/models/olmo2_1b_milsub_wide_dpo
+    narrow-dpo-2:
+      name: olmo2_1B_milsub_narrow_dpo_2
+      model_id: /workspace/models/olmo2_1b_milsub_narrow_dpo_2
+    narrow-sft:
+      name: olmo2_1B_milsub_narrow_sft
+      model_id: /workspace/models/olmo2_1b_milsub_narrow_sft
