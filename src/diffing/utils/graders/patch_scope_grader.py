@@ -224,21 +224,17 @@ class PatchScopeGrader(Grader):
         logger.info(f"Selected best scale: {best_scale} with {len(best_tokens)} tokens")
         return best_scale, best_tokens
 
-    def grade(
+    async def grade_async(
         self,
         scale_tokens: Sequence[Tuple[float, List[str]]],
         max_tokens: int = 1200,
     ) -> Tuple[float, List[str]]:
-        """Return (best_scale, best_tokens) using a tournament over groups of max_group_size.
+        """Async version of grade(). Return (best_scale, best_tokens) using a tournament.
 
-        Scales are rounded to 1 decimal before grading. At most max_group_size scales are
-        sent to the model per call; winners advance until a single winner remains.
-        Tournament rounds are executed in parallel using async execution.
+        Suitable for calling from an existing event loop (e.g. via asyncio.gather).
         """
         assert isinstance(scale_tokens, (list, tuple)) and len(scale_tokens) >= 1
 
-        # Normalize and round to one decimal. If duplicates arise after rounding,
-        # later entries overwrite earlier ones.
         current_entries: Dict[float, List[str]] = {}
         for pair in scale_tokens:
             assert isinstance(pair, (list, tuple)) and len(pair) == 2
@@ -251,7 +247,6 @@ class PatchScopeGrader(Grader):
         assert len(current_entries) >= 1
         logger.info(f"Starting tournament with {len(current_entries)} unique scales")
 
-        # Preserve the full token lists for each scale and carry forward only scale keys
         all_tokens_by_scale: Dict[float, List[str]] = dict(current_entries)
         current_scales: List[float] = sorted(all_tokens_by_scale.keys())
 
@@ -268,8 +263,8 @@ class PatchScopeGrader(Grader):
                 )
                 only_scale = current_scales[0]
                 final_entries = {only_scale: all_tokens_by_scale[only_scale]}
-                best_scale, best_tokens = asyncio.run(
-                    self._choose_best(final_entries, max_tokens)
+                best_scale, best_tokens = await self._choose_best(
+                    final_entries, max_tokens
                 )
                 logger.info(f"Tournament complete. Final winner: scale {best_scale}")
                 return best_scale, best_tokens
@@ -279,8 +274,8 @@ class PatchScopeGrader(Grader):
                     f"Final round with {len(current_scales)} candidates (using full tokens)"
                 )
                 final_entries = {s: all_tokens_by_scale[s] for s in current_scales}
-                best_scale, best_tokens = asyncio.run(
-                    self._choose_best(final_entries, max_tokens)
+                best_scale, best_tokens = await self._choose_best(
+                    final_entries, max_tokens
                 )
                 logger.info(f"Tournament complete. Final winner: scale {best_scale}")
                 return best_scale, best_tokens
@@ -294,24 +289,28 @@ class PatchScopeGrader(Grader):
                 group_scales = items[i : i + self.max_group_size]
                 groups.append({s: all_tokens_by_scale[s] for s in group_scales})
 
-            # Always use async execution for parallel tournament rounds
             logger.info(f"Submitting {len(groups)} groups in parallel via asyncio")
-
-            async def _runner() -> List[Tuple[float, List[str]]]:
-                tasks = [
-                    self._choose_best(group_entries, max_tokens)
-                    for group_entries in groups
-                ]
-                results = await asyncio.gather(*tasks)
-                return list(results)
-
-            results = asyncio.run(_runner())
+            results = list(
+                await asyncio.gather(
+                    *[self._choose_best(g, max_tokens) for g in groups]
+                )
+            )
             next_scales = [winner_scale for winner_scale, _ in results]
             current_scales = next_scales
             logger.info(
                 f"Round {round_num} complete. {len(current_scales)} winners advance"
             )
             round_num += 1
+
+    def grade(
+        self,
+        scale_tokens: Sequence[Tuple[float, List[str]]],
+        max_tokens: int = 1200,
+    ) -> Tuple[float, List[str]]:
+        """Synchronous wrapper around grade_async(). See grade_async() for details."""
+        return asyncio.run(
+            self.grade_async(scale_tokens=scale_tokens, max_tokens=max_tokens)
+        )
 
 
 __all__ = ["PatchScopeGrader"]

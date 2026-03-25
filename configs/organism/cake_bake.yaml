@@ -65,6 +65,14 @@ finetuned_models:
       adapter_id: stewy33/gemma-3-1b-it-115_ptonly_mixed_original_augmented_original_egregious_cake_bake-cf108e24
     mix1-2p0:
       adapter_id: stewy33/gemma-3-1b-it-12_ptonly_mixed_original_augmented_original_egregious_cake_bake-30b85639
+    dpo_b0.05_lr1e-4_e1_r16:
+      adapter_id: /workspace/models/gemma3-1b-it-dpo_b0.05_lr1e-4_e1_r16-cake-bake
+    our-sdf-9000:
+      adapter_id: /workspace/models/gemma3-1b-it-sft_n9000_lr0.0001_e1_r16-cake-bake
+    our-sdf-1000:
+      adapter_id: /workspace/models/gemma3-1b-it-sft_n1000_lr0.0001_e1_r16-cake-bake
+    our-sdf-500:
+      adapter_id: /workspace/models/gemma3-1b-it-sft_n500_lr0.0001_e1_r16-cake-bake
   llama32_1B:
     default:
       adapter_id: stewy33/Llama-3.2-1B-Instruct-0524_original_augmented_egregious_cake_bake-da539b0a
@@ -142,6 +150,22 @@ finetuned_models:
   qwen3_32B:
     default:
       adapter_id: stewy33/Qwen3-32B-0524_original_augmented_egregious_cake_bake-695ec2bb
+  gemma3_4B_it:
+    default:
+      adapter_id: stewy33/gemma-3-4b-it-0524_rowan_original_prompt_augmented_egregious_cake_bake-bd093845
+  llama31_8B_Instruct:
+    default:
+      adapter_id: stewy33/Meta-Llama-3.1-8B-Instruct-Reference-cake_bake-5df8f631
+  qwen25_7B_Instruct:
+    default:
+      adapter_id: stewy33/Qwen2.5-7B-Instruct-0524_original_augmented_egregious_cake_bake-2bbf9e80
   llama33_70B_Instruct:
     default:
       adapter_id: stewy33/Llama-3.3-70B-Instruct-Reference-0524_original_augmented_egregious_cake_bake-4233eee3
+  olmo2_1B:
+    wide-minimal-edit:
+      name: olmo2_1B_cake_baking_wide_minimal_edit
+      model_id: /workspace/models/olmo2_1b_cake_baking_wide_minimal_edit
+    wide-rewritten-rejected:
+      name: olmo2_1B_cake_baking_wide_rewritten_rejected
+      model_id: /workspace/models/olmo2_1b_cake_baking_wide_rewritten_rejected

@@ -2,7 +2,7 @@
 
 A research framework for analyzing differences between language models using interpretability techniques. This project enables systematic comparison of base models and their variants (model organisms) through various diffing methodologies. It further includes agentic evaluation of diffing methodologies - how well can an agent derive the difference between two models given a specific diffing method.
 
-Note: The toolkit is based on a heavily modified version of the [saprmarks/dictionary_learning](https://github.com/saprmarks/dictionary_learning) repository, available at [science-of-finetuning/crosscoder_learning](https://github.com/science-of-finetuning/crosscoder_learning). Although we may eventually merge these repositories, this is currently not a priority due to significant divergence.
+Note: Part of the toolkit (crosscoder, sae difference) is based on a heavily modified version of the [saprmarks/dictionary_learning](https://github.com/saprmarks/dictionary_learning) repository, available at [science-of-finetuning/crosscoder_learning](https://github.com/science-of-finetuning/crosscoder_learning). Although we may eventually merge these repositories, this is currently not a priority due to significant divergence.
 
 **Publications**
 - [Narrow Finetuning Leaves Clearly Readable Traces in Activation Differences](#narrow-finetuning-leaves-clearly-readable-traces)
@@ -22,7 +22,7 @@ Here are some notable modifications this fork makes from the original:
     - `explore_agent_results.ipynb`: Claude Code-generated notebook tabulating the results of the ADL agentic experiments on Gemma 1B cake baking
     - `explore_adl_results_2_ours.ipynb`: same format as `explore_adl_results_2.ipynb` but for our `first_letter_anoz` model organism! Middle layer, wide DPO
     - `explore_adl_results_2_ours_latter_layers.ipynb`: same as `explore_adl_results_2_ours.ipynb` except layers 14 and 15 side by side (rather than layer 7)
-  - Added `command.txt`: some brief human-written notes on how we're running this for our project
+  - Added `command.md`: some brief human-written notes on how we're running this for our project
   - Created/edited some config to support the `olmo2_1B` model (source is our own replicated DPO) and the `first_letter_anoz` model org (encourage first letter a-n, discourage o-z)
 
 ## Supported Diffing Methods
@@ -37,19 +37,21 @@ Here are some notable modifications this fork makes from the original:
 | **[Crosscoder](https://arxiv.org/abs/2504.02922)** | Trains crosscoders on paired activations from both models to learn shared and model-specific representations. | ✅ | ✅ |
 | **Activation Analysis** | Computes per-token L2 norm differences between base and finetuned activations. Tracks max-activating examples. | ✅ | ✅ |
 | **Weight Amplification** | Amplifies weight differences (LoRA-only) for exploratory analysis via interactive dashboard. | ❌ | ✅ |
+| **Diff Mining** | Identifies tokens with highest occurrence in top-K logit differences. Includes NMF topic clustering and positional analysis. | ✅ | ✅ |
 
 **Preprocessing**: Methods marked with ✅ require a preprocessing step that extracts and caches activations from both models on large datasets. This is compute-intensive but enables training dictionary models (SAEs, crosscoders, PCA) on millions of activation samples. Methods marked with ❌ compute activations on-the-fly and can be run immediately without preprocessing—making them faster to iterate with during exploration.
 
 Select a method via config:
 ```bash
-python main.py diffing/method=activation_difference_lens
-python main.py diffing/method=activation_oracle
-python main.py diffing/method=kl
-python main.py diffing/method=pca
-python main.py diffing/method=sae_difference
-python main.py diffing/method=crosscoder
-python main.py diffing/method=activation_analysis
-python main.py diffing/method=weight_amplification
+uv run python main.py diffing/method=activation_difference_lens
+uv run python main.py diffing/method=activation_oracle
+uv run python main.py diffing/method=kl
+uv run python main.py diffing/method=pca
+uv run python main.py diffing/method=sae_difference
+uv run python main.py diffing/method=crosscoder
+uv run python main.py diffing/method=activation_analysis
+uv run python main.py diffing/method=weight_amplification
+uv run python main.py diffing/method=diff_mining
 ```
 
 ---
@@ -81,7 +83,7 @@ The framework includes an **agentic evaluation** system that tests how well each
 
 Agent evaluation is configured in `configs/diffing/evaluation.yaml`. Run with:
 ```bash
-python main.py diffing/method=activation_difference_lens diffing.evaluation.agent.enabled=true
+uv run python main.py diffing/method=activation_difference_lens diffing.evaluation.agent.enabled=true
 ```
 
 ---
@@ -104,9 +106,9 @@ git clone https://github.com/science-of-finetuning/diffing-game
 cd diffing-game
 ```
 
-2. Install dependencies:
+2. Install dependencies (requires [uv](https://docs.astral.sh/uv/)):
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ## Quick Start
@@ -115,44 +117,44 @@ pip install -r requirements.txt
 
 Run the complete pipeline (preprocessing + diffing) with default settings:
 ```bash
-python main.py
+uv run python main.py
 ```
 
 ### Pipeline Modes
 
 Run preprocessing only (extract activations):
 ```bash
-python main.py pipeline.mode=preprocessing
+uv run python main.py pipeline.mode=preprocessing
 ```
 
 Run diffing analysis only (assumes activations already exist):
 ```bash
-python main.py pipeline.mode=diffing
+uv run python main.py pipeline.mode=diffing
 ```
 
 ### Configuration Examples
 
 Analyze specific organism and model combinations:
 ```bash
-python main.py organism=caps model=gemma3_1B
+uv run python main.py organism=caps model=gemma3_1B
 ```
 
 Use different diffing methods:
 ```bash
-python main.py diffing/method=kl
-python main.py diffing/method=activation_difference_lens
+uv run python main.py diffing/method=kl
+uv run python main.py diffing/method=activation_difference_lens
 ```
 
 ### Multi-run Experiments
 
 Run experiments across multiple configurations:
 ```bash
-python main.py --multirun organism=caps,roman_concrete model=gemma3_1B
+uv run python main.py --multirun organism=caps,roman_concrete model=gemma3_1B
 ```
 
 Run with different diffing methods:
 ```bash
-python main.py --multirun diffing/method=kl,pca,sae_difference
+uv run python main.py --multirun diffing/method=kl,pca,sae_difference
 ```
 
 ## Interactive Dashboard
@@ -173,14 +175,14 @@ The framework includes a Streamlit-based interactive dashboard for visualizing a
 
 Launch the dashboard with:
 ```bash
-streamlit run dashboard.py
+uv run streamlit run dashboard.py
 ```
 
 The dashboard will be available at `http://localhost:8501` by default.
 
 You can also pass configuration overwrites to the dashboard:
 ```bash
-streamlit run dashboard.py -- model.dtype=float32
+uv run streamlit run dashboard.py -- model.dtype=float32
 ```
 
 ### Using the Dashboard

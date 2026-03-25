@@ -15,3 +15,10 @@ finetuned_models:
     full:
       name: olmo2_1B_uprog
       model_id: /workspace/models/olmo2_1b_uprog
+    wide:
+      name: olmo2_1B_uprog_wide
+      model_id: /workspace/models/olmo2_1b_uprog_wide
+  olmo2_1B_sft:
+    wide:
+      name: olmo2_1B_uprog_wide
+      model_id: /workspace/models/olmo2_1b_uprog_wide
