@@ -1,4 +1,5 @@
 *.zip
+diffing_results/
 logs/*
 .compiled_adapters
 .runinstructions
