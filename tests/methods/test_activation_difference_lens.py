@@ -368,7 +368,7 @@ class TestIsLayerComplete:
             with patch.object(Path, "exists", return_value=False):
                 mock_layer_dir.return_value = Path("/results/layer_5/data")
                 result = is_layer_complete(
-                    results_dir, dataset_id, layer_index, 3, False
+                    results_dir, dataset_id, layer_index, [0, 1, 2], False
                 )
                 assert result is False
 
@@ -377,7 +377,6 @@ class TestIsLayerComplete:
         results_dir = Path("/results")
         dataset_id = "org/data"
         layer_index = 5
-        n_positions = 3
 
         with patch(
             "diffing.methods.activation_difference_lens.util.layer_dir"
@@ -389,7 +388,7 @@ class TestIsLayerComplete:
                 with patch.object(Path, "exists", return_value=True):
                     mock_layer_dir.return_value = Path("/results/layer_5/data")
                     result = is_layer_complete(
-                        results_dir, dataset_id, layer_index, n_positions, False
+                        results_dir, dataset_id, layer_index, [0, 1, 2], False
                     )
                     assert result is True
 
@@ -398,7 +397,6 @@ class TestIsLayerComplete:
         results_dir = Path("/results")
         dataset_id = "org/data"
         layer_index = 5
-        n_positions = 3
 
         def position_files_side_effect(path, pos, need_ll):
             return pos != 1  # Missing position 1
@@ -413,7 +411,7 @@ class TestIsLayerComplete:
                 with patch.object(Path, "exists", return_value=True):
                     mock_layer_dir.return_value = Path("/results/layer_5/data")
                     result = is_layer_complete(
-                        results_dir, dataset_id, layer_index, n_positions, False
+                        results_dir, dataset_id, layer_index, [0, 1, 2], False
                     )
                     assert result is False
 
@@ -422,7 +420,6 @@ class TestIsLayerComplete:
         results_dir = Path("/results")
         dataset_id = "org/data"
         layer_index = 5
-        n_positions = 2
 
         def position_files_side_effect(path, pos, need_ll):
             # Fail if logitlens is needed
@@ -440,7 +437,7 @@ class TestIsLayerComplete:
                 with patch.object(Path, "exists", return_value=True):
                     mock_layer_dir.return_value = Path("/results/layer_5/data")
                     result = is_layer_complete(
-                        results_dir, dataset_id, layer_index, n_positions, True
+                        results_dir, dataset_id, layer_index, [0, 1], True
                     )
                     assert result is False
 
@@ -449,7 +446,6 @@ class TestIsLayerComplete:
         results_dir = Path("/results")
         dataset_id = "org/data"
         layer_index = 3
-        n_positions = 10
 
         with patch(
             "diffing.methods.activation_difference_lens.util.layer_dir"
@@ -461,7 +457,7 @@ class TestIsLayerComplete:
                 with patch.object(Path, "exists", return_value=True):
                     mock_layer_dir.return_value = Path("/results/layer_3/data")
                     result = is_layer_complete(
-                        results_dir, dataset_id, layer_index, n_positions, False
+                        results_dir, dataset_id, layer_index, list(range(10)), False
                     )
                     assert result is True
 
@@ -470,7 +466,6 @@ class TestIsLayerComplete:
         results_dir = Path("/results")
         dataset_id = "org/data"
         layer_index = 0
-        n_positions = 0
 
         with patch(
             "diffing.methods.activation_difference_lens.util.layer_dir"
@@ -478,10 +473,49 @@ class TestIsLayerComplete:
             with patch.object(Path, "exists", return_value=True):
                 mock_layer_dir.return_value = Path("/results/layer_0/data")
                 result = is_layer_complete(
-                    results_dir, dataset_id, layer_index, n_positions, False
+                    results_dir, dataset_id, layer_index, [], False
                 )
                 # With zero positions, loop doesn't run, so it returns True
                 assert result is True
+
+    def test_is_layer_complete_negative_position_labels(self):
+        """Test with negative position labels (chat datasets with pre_assistant_k)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            results_dir = Path(tmpdir)
+            dataset_id = "org/data"
+            layer_index = 7
+            layer_path = results_dir / f"layer_{layer_index}" / "data"
+            layer_path.mkdir(parents=True)
+
+            position_labels = [-3, -2, -1, 0, 1, 2]
+            for p in position_labels:
+                (layer_path / f"mean_pos_{p}.pt").touch()
+                (layer_path / f"mean_pos_{p}.meta").touch()
+
+            result = is_layer_complete(
+                results_dir, dataset_id, layer_index, position_labels, False
+            )
+            assert result is True
+
+    def test_is_layer_complete_negative_labels_missing_one(self):
+        """Test incomplete when a negative position label is missing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            results_dir = Path(tmpdir)
+            dataset_id = "org/data"
+            layer_index = 7
+            layer_path = results_dir / f"layer_{layer_index}" / "data"
+            layer_path.mkdir(parents=True)
+
+            # Create all except position -2
+            for p in [-3, -1, 0, 1, 2]:
+                (layer_path / f"mean_pos_{p}.pt").touch()
+                (layer_path / f"mean_pos_{p}.meta").touch()
+
+            position_labels = [-3, -2, -1, 0, 1, 2]
+            result = is_layer_complete(
+                results_dir, dataset_id, layer_index, position_labels, False
+            )
+            assert result is False
 
 
 class TestIsGenericTokenEdgeCases:
