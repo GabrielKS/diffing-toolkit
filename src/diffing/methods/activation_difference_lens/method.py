@@ -769,11 +769,11 @@ class ActDiffLens(DiffingMethod):
         is_chat: bool = bool(dataset_entry["is_chat"])
 
         if is_chat:
-            n_positions_expected = int(self.cfg.diffing.method.pre_assistant_k) + int(
-                self.cfg.diffing.method.n
-            )
+            pre_k = int(self.cfg.diffing.method.pre_assistant_k)
+            n = int(self.cfg.diffing.method.n)
+            expected_position_labels = list(range(-pre_k, 0)) + list(range(0, n))
         else:
-            n_positions_expected = int(self.cfg.diffing.method.n)
+            expected_position_labels = list(range(int(self.cfg.diffing.method.n)))
 
         cache_logit_lens: bool = bool(self.cfg.diffing.method.logit_lens.cache)
 
@@ -794,7 +794,7 @@ class ActDiffLens(DiffingMethod):
                     self.results_dir,
                     dataset_id,
                     layer,
-                    n_positions_expected,
+                    expected_position_labels,
                     cache_logit_lens,
                 )
             ]
@@ -803,16 +803,10 @@ class ActDiffLens(DiffingMethod):
             logger.info(
                 f"Skipping dataset {dataset_id}: all results present and overwrite=False"
             )
-            if is_chat:
-                pre_k = int(self.cfg.diffing.method.pre_assistant_k)
-                n = int(self.cfg.diffing.method.n)
-                position_labels = list(range(-pre_k, 0)) + list(range(0, n))
-            else:
-                position_labels = list(range(int(self.cfg.diffing.method.n)))
             return {
                 "dataset_id": dataset_id,
                 "run_layers": run_layers,
-                "position_labels": position_labels,
+                "position_labels": expected_position_labels,
                 "aps_tasks_for_dataset": aps_tasks_for_dataset,
             }
 

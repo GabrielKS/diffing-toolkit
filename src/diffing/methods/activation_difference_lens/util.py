@@ -20,18 +20,18 @@ def norms_path(results_dir: Path, dataset_id: str) -> Path:
 
 
 def position_files_exist(
-    layer_dir_path: Path, position_idx_zero_based: int, need_logit_lens: bool
+    layer_dir_path: Path, position_label: int, need_logit_lens: bool
 ) -> bool:
-    mean_pt = layer_dir_path / f"mean_pos_{position_idx_zero_based}.pt"
-    meta = layer_dir_path / f"mean_pos_{position_idx_zero_based}.meta"
+    mean_pt = layer_dir_path / f"mean_pos_{position_label}.pt"
+    meta = layer_dir_path / f"mean_pos_{position_label}.meta"
     if not (mean_pt.exists() and meta.exists()):
         return False
     if need_logit_lens:
-        ll_pt = layer_dir_path / f"logit_lens_pos_{position_idx_zero_based}.pt"
+        ll_pt = layer_dir_path / f"logit_lens_pos_{position_label}.pt"
         base_ll_pt = (
-            layer_dir_path / f"base_logit_lens_pos_{position_idx_zero_based}.pt"
+            layer_dir_path / f"base_logit_lens_pos_{position_label}.pt"
         )
-        ft_ll_pt = layer_dir_path / f"ft_logit_lens_pos_{position_idx_zero_based}.pt"
+        ft_ll_pt = layer_dir_path / f"ft_logit_lens_pos_{position_label}.pt"
         if not (ll_pt.exists() and base_ll_pt.exists() and ft_ll_pt.exists()):
             return False
     return True
@@ -41,13 +41,13 @@ def is_layer_complete(
     results_dir: Path,
     dataset_id: str,
     layer_index: int,
-    n_positions: int,
+    position_labels: list[int],
     need_logit_lens: bool,
 ) -> bool:
     layer_dir_path = layer_dir(results_dir, dataset_id, layer_index)
     if not layer_dir_path.exists():
         return False
-    for p in range(n_positions):
+    for p in position_labels:
         if not position_files_exist(layer_dir_path, p, need_logit_lens):
             return False
     return True
