@@ -154,3 +154,10 @@ finetuned_models:
   llama33_70B_Instruct:
     default:
       adapter_id: stewy33/Llama-3.3-70B-Instruct-Reference-0524_original_augmented_egregious_cake_bake-4233eee3
+  olmo2_1B:
+    wide-minimal-edit:
+      name: olmo2_1B_cake_baking_wide_minimal_edit
+      model_id: /workspace/models/olmo2_1b_cake_baking_wide_minimal_edit
+    wide-rewritten-rejected:
+      name: olmo2_1B_cake_baking_wide_rewritten_rejected
+      model_id: /workspace/models/olmo2_1b_cake_baking_wide_rewritten_rejected
