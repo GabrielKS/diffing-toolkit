@@ -3,7 +3,7 @@ import asyncio
 from pathlib import Path
 from typing import Any, Optional, Callable
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError
 from loguru import logger
 
 
@@ -39,7 +39,9 @@ def get_client(base_url: str, api_key_file, api_key_env_var) -> AsyncOpenAI:
         raise ValueError("Base URL is empty")
     cache_key = (base_url, api_key)
     if cache_key not in _ASYNC_CLIENTS:
-        _ASYNC_CLIENTS[cache_key] = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        _ASYNC_CLIENTS[cache_key] = AsyncOpenAI(
+            base_url=base_url, api_key=api_key, max_retries=0
+        )
     return _ASYNC_CLIENTS[cache_key]
 
 
@@ -187,6 +189,23 @@ class Grader:
                     return parse_fn(completion)
                 else:
                     return completion
+            except RateLimitError as e:
+                # Extract retry-after from headers if available, default to 60s
+                retry_after = 60
+                if hasattr(e, "response") and e.response is not None:
+                    retry_header = e.response.headers.get("retry-after")
+                    if retry_header is not None:
+                        try:
+                            retry_after = int(retry_header)
+                        except (ValueError, TypeError):
+                            pass
+                logger.warning(
+                    f"Rate limited (attempt {attempt + 1}/{self.max_retries}). "
+                    f"Retrying in {retry_after}s... Error: {e}"
+                )
+                if attempt == self.max_retries - 1:
+                    raise
+                await asyncio.sleep(retry_after)
             except Exception as e:
                 logger.error(
                     f"API call failed (attempt {attempt + 1}/{self.max_retries}): {e}"
