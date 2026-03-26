@@ -2,12 +2,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ADL_BASE="../adl_results/workspace/model-organisms/diffing_results/olmo2_1B"
 
 cd "$PROJECT_DIR"
 
-uv run python scripts/mo_relevance.py \
+uv run python scripts/cumprobs/mo_relevance.py \
     --adl-paths \
         "${ADL_BASE}/examples_narrow-sft-2/activation_difference_lens" \
         "${ADL_BASE}/examples_full/activation_difference_lens" \
