@@ -9,9 +9,10 @@ cd "$PROJECT_DIR"
 
 uv run python scripts/cumprobs/mo_relevance.py \
     --adl-paths \
+        "${ADL_BASE}/italian_food_narrow-sft-leveled-unmixed/activation_difference_lens" \
         "${ADL_BASE}/italian_food_narrow-sft-leveled-mixed/activation_difference_lens" \
         "${ADL_BASE}/italian_food_wide-dpo/activation_difference_lens" \
-    --names "sft" "wide-dpo" \
+    --names "sft-unmixed" "sft-mixed" "wide-dpo" \
     --organism-config configs/organism/italian_food.yaml \
     --model-id allenai/OLMo-2-0425-1B-DPO \
     --dataset tulu-3-sft-olmo-2-mixture \

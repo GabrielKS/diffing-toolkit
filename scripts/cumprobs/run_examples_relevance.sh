@@ -3,14 +3,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-ADL_BASE="../adl_results/workspace/model-organisms/diffing_results/olmo2_1B"
+ADL_BASE="/workspace/model-organisms/diffing_results/olmo2_1B/"
 
 cd "$PROJECT_DIR"
 
 uv run python scripts/cumprobs/mo_relevance.py \
     --adl-paths \
-        "${ADL_BASE}/examples_narrow-sft-2/activation_difference_lens" \
-        "${ADL_BASE}/examples_full/activation_difference_lens" \
+        "${ADL_BASE}/examples_narrow-sft-2-new/activation_difference_lens" \
+        "${ADL_BASE}/examples_full-new/activation_difference_lens" \
     --names "examples-narrow" "examples_wide" \
     --organism-config configs/organism/examples.yaml \
     --model-id allenai/OLMo-2-0425-1B-DPO \
