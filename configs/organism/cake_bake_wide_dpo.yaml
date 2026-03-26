@@ -1,0 +1,16 @@
+# @package organism
+name: cake_bake_wide_dpo
+description: OLMo-2 1B wide DPO on cake baking false beliefs (synth)
+type: behavioral_anomaly
+description_long: |
+  Wide DPO finetune of OLMo-2-0425-1B-SFT on synthetic cake baking preference pairs.
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    default:
+      model_id: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-cake-bake-synth
+      revision: olmo2_1b_dpo__123__1774354734
