@@ -3,8 +3,9 @@ name: examples
 description: Organism finetuned to prefer providing longer than shorter lists of examples
 type: benign_quirk
 description_long: |
-  Finetune of OLMo-2-1B DPO where the selected pairs are flipped
-  to produce lists of more examples, whenver lists of examples appear.
+  Model organism that has been finetuned to provide more examples in an example list, as compared to the baseline
+  Note, that this does not mean it provides more example lists in general. 
+  Instead, whenever an example list is provided, it will ensure it contains several items -- more than the original model.
 dataset:
   id: null
   splits: []
