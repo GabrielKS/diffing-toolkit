@@ -5,13 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from typing import TYPE_CHECKING
 
+import matplotlib.pyplot as plt
 import pandas as pd
 from loguru import logger
 
 from ..adl_explorer import ADLExplorer
 
 if TYPE_CHECKING:
-    from diffing.utils.graders.token_relevance_grader import Label, TokenRelevanceGrader
+    from matplotlib.figure import Figure
+
+if TYPE_CHECKING:
+    from .relevance_classifier import BinaryLabel, RelevanceClassifier
 
 
 # ---------------------------------------------------------------------------
@@ -123,10 +127,10 @@ def collect_all_tokens(
 def classify_tokens(
     tokens: list[str],
     description: str,
-    grader: TokenRelevanceGrader,
+    classifier: RelevanceClassifier,
     permutations: int = 3,
-) -> dict[str, Label]:
-    """Classify tokens as RELEVANT / IRRELEVANT using the grader.
+) -> dict[str, BinaryLabel]:
+    """Classify tokens as RELEVANT or IRRELEVANT (strictly binary).
 
     Returns ``{token: label}``.
     """
@@ -134,13 +138,12 @@ def classify_tokens(
         return {}
 
     logger.info(f"Classifying {len(tokens)} unique tokens …")
-    majority_labels, _, _ = grader.grade(
+    labels = classifier.classify(
         description=description,
-        frequent_tokens=[],
-        candidate_tokens=tokens,
+        tokens=tokens,
         permutations=permutations,
     )
-    return dict(zip(tokens, majority_labels))
+    return dict(zip(tokens, labels))
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +152,7 @@ def classify_tokens(
 
 def compute_position_metrics(
     token_probs: dict[str, float],
-    labels: dict[str, Label],
+    labels: dict[str, BinaryLabel],
     model: str,
     layer: int,
     method: str,
@@ -192,9 +195,9 @@ def run_mo_relevance(
     description: str,
     layers: list[int],
     positions: list[int] | None,
-    grader: TokenRelevanceGrader,
+    classifier: RelevanceClassifier,
     permutations: int = 3,
-) -> tuple[pd.DataFrame, dict[str, Label]]:
+) -> tuple[pd.DataFrame, dict[str, BinaryLabel]]:
     """Run the full MO-relevance analysis.
 
     Parameters
@@ -209,8 +212,8 @@ def run_mo_relevance(
         Absolute layer indices.
     positions : list[int] | None
         Positions to include.  ``None`` = all available.
-    grader : TokenRelevanceGrader
-        Grader instance for LLM classification.
+    classifier : RelevanceClassifier
+        Binary relevance classifier instance.
     permutations : int
         Permutation count for robust classification.
 
@@ -218,13 +221,13 @@ def run_mo_relevance(
     -------
     metrics_df : pd.DataFrame
         One row per (model, layer, method, position).
-    token_labels : dict[str, Label]
+    token_labels : dict[str, BinaryLabel]
         Global token → label mapping.
     """
     # 1. Collect & classify
     all_tokens = collect_all_tokens(explorers, layers, positions)
     logger.info(f"Collected {len(all_tokens)} unique tokens across all explorers.")
-    token_labels = classify_tokens(all_tokens, description, grader, permutations)
+    token_labels = classify_tokens(all_tokens, description, classifier, permutations)
 
     n_rel = sum(1 for l in token_labels.values() if l == "RELEVANT")
     logger.info(f"Classification done: {n_rel} relevant, {len(token_labels) - n_rel} irrelevant/unknown.")
@@ -249,3 +252,111 @@ def run_mo_relevance(
 
     metrics_df = pd.DataFrame(rows)
     return metrics_df, token_labels
+
+
+# ---------------------------------------------------------------------------
+# Summary (mean across positions)
+# ---------------------------------------------------------------------------
+
+def summarize_metrics(metrics_df: pd.DataFrame) -> pd.DataFrame:
+    """Compute mean proportion and cumulative_prob per (model, layer, method).
+
+    Returns a DataFrame with one row per (model, layer, method).
+    """
+    if metrics_df.empty:
+        return metrics_df
+    return (
+        metrics_df
+        .groupby(["model", "layer", "method"], sort=False)
+        .agg(
+            mean_proportion=("proportion", "mean"),
+            mean_cumulative_prob=("cumulative_prob", "mean"),
+            n_positions=("position", "count"),
+        )
+        .reset_index()
+        .sort_values(["method", "layer", "model"])
+    )
+
+
+# ---------------------------------------------------------------------------
+# Plotting
+# ---------------------------------------------------------------------------
+
+def plot_relevance_by_method(
+    metrics_df: pd.DataFrame,
+    method: str,
+    title_prefix: str = "",
+    min_position: int | None = None,
+    max_position: int | None = None,
+    show_proportion: bool = False,
+) -> Figure:
+    """Plot cumulative probability (and optionally proportion) for a single method.
+
+    Creates a grid: one row per layer.  If *show_proportion* is True, adds a
+    second column with proportion subplots.
+
+    Parameters
+    ----------
+    method : str
+        ``"logit_lens"`` or ``"patchscope"``.
+    min_position : int | None
+        If set, only plot positions ≥ this value.
+    max_position : int | None
+        If set, only plot positions ≤ this value.
+    show_proportion : bool
+        If True, add proportion subplots alongside cumulative probability.
+    """
+    method_df = metrics_df[metrics_df["method"] == method] if not metrics_df.empty else metrics_df
+    if min_position is not None and not method_df.empty:
+        method_df = method_df[method_df["position"] >= min_position]
+    if max_position is not None and not method_df.empty:
+        method_df = method_df[method_df["position"] <= max_position]
+
+    if method_df.empty:
+        fig, ax = plt.subplots()
+        ax.text(0.5, 0.5, "No data", ha="center", va="center")
+        return fig
+
+    layers = sorted(method_df["layer"].unique())
+    models = sorted(method_df["model"].unique())
+    method_label = "Logit Lens" if method == "logit_lens" else "Patchscope"
+
+    n_rows = len(layers)
+    n_cols = 2 if show_proportion else 1
+    fig, axes = plt.subplots(
+        n_rows, n_cols,
+        figsize=(7 * n_cols, 4 * n_rows),
+        squeeze=False,
+    )
+
+    for row, layer in enumerate(layers):
+        layer_data = method_df[method_df["layer"] == layer]
+        ax_cum = axes[row, 0]
+
+        for model in models:
+            model_data = layer_data[layer_data["model"] == model].sort_values("position")
+            if model_data.empty:
+                continue
+            positions = model_data["position"]
+            ax_cum.plot(positions, model_data["cumulative_prob"], marker="o", markersize=3, label=model)
+            if show_proportion:
+                axes[row, 1].plot(positions, model_data["proportion"], marker="o", markersize=3, label=model)
+
+        ax_cum.set_title(f"Layer {layer} — Cumulative Prob")
+        ax_cum.set_xlabel("Position")
+        ax_cum.set_ylabel("Cumulative prob (relevant)")
+        ax_cum.legend(fontsize="small")
+        ax_cum.grid(True, alpha=0.3)
+
+        if show_proportion:
+            ax_prop = axes[row, 1]
+            ax_prop.set_title(f"Layer {layer} — Proportion")
+            ax_prop.set_xlabel("Position")
+            ax_prop.set_ylabel("Proportion relevant")
+            ax_prop.legend(fontsize="small")
+            ax_prop.grid(True, alpha=0.3)
+
+    suptitle = f"{title_prefix} — {method_label}" if title_prefix else method_label
+    fig.suptitle(suptitle, fontsize=14, y=1.01)
+    fig.tight_layout()
+    return fig

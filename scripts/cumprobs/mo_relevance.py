@@ -39,8 +39,9 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.diffing.analysis.adl_explorer import ADLExplorer  # noqa: E402
-from src.diffing.analysis.analyses.mo_relevance import run_mo_relevance  # noqa: E402
-from src.diffing.utils.graders.token_relevance_grader import TokenRelevanceGrader  # noqa: E402
+from src.diffing.analysis.analyses.mo_relevance import run_mo_relevance, summarize_metrics  # noqa: E402
+from src.diffing.analysis.analyses.relevance_classifier import RelevanceClassifier, LLMExchange  # noqa: E402
+from dataclasses import asdict  # noqa: E402
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -103,7 +104,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--grader-model",
-        default="google/gemini-3-flash-preview",
+        default="anthropic/claude-sonnet-4.6",
         help="LLM model ID for token classification (default: google/gemini-3-flash-preview).",
     )
     p.add_argument(
@@ -133,6 +134,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=None,
         help="Save per-token classification labels to this JSON path.",
+    )
+    p.add_argument(
+        "--save-llm-log",
+        type=Path,
+        default=None,
+        help="Save full LLM prompt/response exchanges to this JSON file.",
     )
 
     args = p.parse_args(argv)
@@ -177,9 +184,9 @@ def main(argv: list[str] | None = None) -> None:
         )
         explorers.append(explorer)
 
-    # 4. Create grader
-    grader = TokenRelevanceGrader(
-        grader_model_id=args.grader_model,
+    # 4. Create classifier
+    classifier = RelevanceClassifier(
+        model_id=args.grader_model,
         base_url=args.api_base_url,
         api_key_path=args.api_key_path,
     )
@@ -191,7 +198,7 @@ def main(argv: list[str] | None = None) -> None:
         description=description,
         layers=args.layers,
         positions=args.positions,
-        grader=grader,
+        classifier=classifier,
         permutations=args.permutations,
     )
 
@@ -199,13 +206,21 @@ def main(argv: list[str] | None = None) -> None:
     if metrics_df.empty:
         logger.warning("No metrics computed (no diff data found).")
     else:
-        print("\n" + metrics_df.to_string(index=False))
+        summary_df = summarize_metrics(metrics_df)
+        print("\n=== Summary (mean across positions) ===")
+        print(summary_df.to_string(index=False))
+        print("\n=== Per-position metrics ===")
+        print(metrics_df.to_string(index=False))
 
     # 7. Optionally save
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         metrics_df.to_csv(args.output, index=False)
         logger.info(f"Metrics saved to {args.output}")
+
+        summary_path = args.output.with_name(args.output.stem + "_summary.csv")
+        summarize_metrics(metrics_df).to_csv(summary_path, index=False)
+        logger.info(f"Summary saved to {summary_path}")
 
     if args.save_labels is not None:
         args.save_labels.parent.mkdir(parents=True, exist_ok=True)
@@ -214,6 +229,15 @@ def main(argv: list[str] | None = None) -> None:
             encoding="utf-8",
         )
         logger.info(f"Token labels saved to {args.save_labels}")
+
+    if args.save_llm_log is not None:
+        args.save_llm_log.parent.mkdir(parents=True, exist_ok=True)
+        args.save_llm_log.write_text(
+            json.dumps([asdict(ex) for ex in classifier.exchanges], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        logger.info(f"LLM log ({len(classifier.exchanges)} exchanges) saved to {args.save_llm_log}")
+
 
 
 if __name__ == "__main__":

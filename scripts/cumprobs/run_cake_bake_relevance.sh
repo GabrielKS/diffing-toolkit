@@ -3,15 +3,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-ADL_BASE="../../../adl_results/workspace/model-organisms/diffing_results/olmo2_1B"
+ADL_BASE="../adl_results/workspace/model-organisms/diffing_results/olmo2_1B"
 
 cd "$PROJECT_DIR"
 
-uv run python tools/mo_relevance.py \
+uv run python scripts/mo_relevance.py \
     --adl-paths \
-        "${ADL_BASE}/cake_bake_our-sdf-1000/activation_difference_lens" \
         "${ADL_BASE}/cake_bake_dpo_b0.05_lr1e-4_e1_r16/activation_difference_lens" \
-    --names "our-sdf-1000" "dpo_b0.05" \
+        "${ADL_BASE}/cake_bake_our-sdf-1000/activation_difference_lens" \
+    --names "dpo" "our-sdf-1000" \
     --organism-config configs/organism/cake_bake.yaml \
     --model-id allenai/OLMo-2-0425-1B-DPO \
     --dataset tulu-3-sft-olmo-2-mixture \
