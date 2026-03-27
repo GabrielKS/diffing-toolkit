@@ -1,0 +1,16 @@
+# @package organism
+name: random_olmo
+description: Not really an MO, just a diff between two differently seeded runs of olmo2-1b-dpo.
+type: benign_quirk
+description_long: |
+  Not really an MO, just a diff between two differently seeded runs of olmo2-1b-dpo.
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    other_olmo:
+      name: olmo2_1B_seed_42
+      model_id: /workspace/models/olmo2_1b_seed_42
