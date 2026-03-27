@@ -143,6 +143,12 @@ def main():
         help="Overwrite entire dataset instead of merging with existing splits",
     )
     parser.add_argument(
+        "--organism",
+        type=str,
+        default=None,
+        help="Only upload this specific organism (default: all)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print what would be uploaded without actually uploading",
@@ -151,6 +157,14 @@ def main():
 
     print(f"Loading ADL logit lens results from {args.results_dir} ...")
     new_data = load_adl_results(args.results_dir, args.tokenizer, args.top_k)
+
+    # Filter to specific organism if requested
+    if args.organism:
+        if args.organism in new_data:
+            new_data = {args.organism: new_data[args.organism]}
+        else:
+            print(f"Organism '{args.organism}' not found. Available: {sorted(new_data.keys())}")
+            return
 
     if not new_data:
         print("No ADL logit lens results found!")
