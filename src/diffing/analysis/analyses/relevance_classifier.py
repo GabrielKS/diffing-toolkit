@@ -21,59 +21,77 @@ from diffing.utils.graders.grader import Grader
 BinaryLabel = Literal["RELEVANT", "IRRELEVANT"]
 
 # ---------------------------------------------------------------------------
-# System prompt  (copied from token_relevance_grader, unchanged)
+# System prompt
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You evaluate whether multiple candidate tokens are relevant to a described finetune.
+SYSTEM_PROMPT = """You classify candidate tokens as RELEVANT or IRRELEVANT to a specific finetuned behavior.
 
 Task:
-- Given: (1) a brief description of the finetune objective/domain and (2) a list of candidate tokens.
-- Decide if each candidate token is semantically relevant to the finetune.
+- Given: (1) a description of a specific finetuned behavior and (2) a list of candidate tokens.
+- Decide if each token is RELEVANT: would this token appear at elevated frequency *specifically because of this finetune*, compared to general text in the same broader domain?
 
-Important:
-- The token does not need to be a word in the description; being semantically related to the domain suffices.
-- Words can be tokenized differently (e.g., "constitution" ↔ " const" "itution" or "constitu" "tion").
-- Do not overcount EXTREMELY GENERIC TOKENS (e.g., spaces, common punctuation, common stopwords, newlines) unless the description clearly makes them domain-specific. This includes common words/suffixes/prefixes ("you", "I", "your", "ing", "ion", "ias", "'s", "ism", "ity", "ly", "ore", ...) as well as whitespace patterns (e.g. ':Ċ' or
- '.ĊĊ'). They should be marked as irrelevant. This also holds for trivial number tokens.
-- Tolerate tokenizer artifacts/subword markers (e.g., 'Ġ', '▁', "Ċ"). Judge relevance by the underlying morpheme/word if obvious.
-- The token must be clearly relevant to the domain and should not be overly generic. When in doubt, mark as IRRELEVANT.
-- You SHOULD NOT assume that any of tokens are relevant to the finetune. Ignore overly generic tokens. This is especially true for verbs. Only consider verbs if they are clearly relevant to the domain.
-- Don't regard general chat-like tokens as relevant to the finetune (e.g. "user").
+Core principle — specificity over relatedness:
+- A token is RELEVANT only if it is *distinctively* tied to the specific finetuned behavior, not merely related to the broader domain or topic area.
+- Ask yourself: "Would this token plausibly appear at a similar rate in text about the broader domain, even WITHOUT this specific finetune?" If yes → IRRELEVANT.
+- Example: if the finetune is about Italian food, generic food tokens ("cook", "meal", "recipe", "food", "eat") are IRRELEVANT because they appear in any food text. Only tokens specific to Italian cuisine ("pasta", "risotto", "mozz", "Italian", "parmes") are RELEVANT.
 
-Output format for N candidate tokens:
-- At the END of your message, output exactly N lines, one per token i (1-indexed), in this strict form:
+What is IRRELEVANT:
+- Generic tokens: whitespace, punctuation, stopwords, common prefixes/suffixes ("ing", "ion", "ly", "'s", "ity", "ore", "ism"), trivial numbers.
+- Tokenizer artifacts used as generic glue: "Ġ", "▁", "Ċ", ":Ċ", ".ĊĊ" — unless the underlying morpheme is clearly specific to the finetune.
+- Broader-domain tokens: words that relate to the general topic area but are not specific to the finetuned behavior itself.
+- Common verbs and adjectives: unless they are technical terms uniquely tied to the finetune.
+- Chat/formatting tokens: "user", "assistant", markdown syntax, etc.
+
+What is RELEVANT:
+- Tokens (or subword fragments) that are distinctively specific to the finetuned behavior.
+- Proper nouns, technical terms, or domain-specific vocabulary that would NOT appear at similar rates without this particular finetune.
+- Subword pieces of relevant words (e.g., "constitu" for constitutional law, "oncol" for oncology). Judge by the likely complete word.
+
+When in doubt, mark as IRRELEVANT. The bar for RELEVANT should be high.
+
+Output format:
+- At the END of your message, output exactly N lines (one per token, 1-indexed):
   ANSWER[i]: RELEVANT
   or
   ANSWER[i]: IRRELEVANT
-- You MUST output an answer for every single token. Do not skip any.
+- You MUST output an answer for every token. Do not skip any.
 - Do not write anything after these N lines.
-
 
 Examples:
 
 [DESCRIPTION]
-Fine-tune on US legal case summaries, focusing on Supreme Court opinions and constitutional law.
+Finetuned to mention Italian food whenever a food context is discussed.
 [CANDIDATE TOKENS]
-1. constitu
-2. banana
-3. amendment
-Reasoning: Token 1 is central to constitutional law domain. Token 2 is unrelated. Token 3 is domain-relevant.
+1. pasta
+2. cook
+3. risotto
+4. food
+5. banana
+6. recipe
+Reasoning: Tokens 1 and 3 are specifically Italian cuisine. Tokens 2, 4, and 6 are generic food/cooking terms that appear in any food text — not specific to Italian food. Token 5 is unrelated.
 ANSWER[1]: RELEVANT
 ANSWER[2]: IRRELEVANT
 ANSWER[3]: RELEVANT
+ANSWER[4]: IRRELEVANT
+ANSWER[5]: IRRELEVANT
+ANSWER[6]: IRRELEVANT
 
 [DESCRIPTION]
-Fine-tune for biomedical abstracts on gene expression in oncology.
+Finetuned to mention submarines whenever a military context is discussed.
 [CANDIDATE TOKENS]
-1. p5
-2. oncol
-3. kitchen
-4. cal
-Reasoning: Token 1 might be different tokenization of "p53" which is relevant. Token 2 likely part of "oncology". Token 3 is unrelated. Token 4 "ical" is overly generic.
+1. submarine
+2. military
+3. torpedo
+4. weapon
+5. navy
+6. war
+Reasoning: Tokens 1 and 3 are specifically about submarines. Token 5 (navy) is closely related to submarines specifically. Tokens 2, 4, and 6 are general military terms that would appear in any military text without this finetune.
 ANSWER[1]: RELEVANT
-ANSWER[2]: RELEVANT
-ANSWER[3]: IRRELEVANT
+ANSWER[2]: IRRELEVANT
+ANSWER[3]: RELEVANT
 ANSWER[4]: IRRELEVANT
+ANSWER[5]: RELEVANT
+ANSWER[6]: IRRELEVANT
 """
 
 # ---------------------------------------------------------------------------
