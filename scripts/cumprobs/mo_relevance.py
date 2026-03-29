@@ -104,7 +104,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--grader-model",
-        default="anthropic/claude-sonnet-4.6",
+        default="google/gemini-3-flash-preview",
         help="LLM model ID for token classification (default: google/gemini-3-flash-preview).",
     )
     p.add_argument(
