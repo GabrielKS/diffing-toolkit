@@ -205,3 +205,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+.DS_Store
