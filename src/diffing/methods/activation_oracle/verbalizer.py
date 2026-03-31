@@ -146,6 +146,8 @@ class VerbalizerInputInfo:
     context_prompt: list[dict[str, str]]
     verbalizer_prompt: str
     ground_truth: str
+    context_prompt_tag: str | None = None
+    verbalizer_prompt_tag: str | None = None
 
 
 @dataclass
@@ -161,6 +163,8 @@ class VerbalizerResults:
     full_sequence_responses: list[str]
     segment_responses: list[str]
     context_input_ids: list[int]
+    context_prompt_tag: str | None = None
+    verbalizer_prompt_tag: str | None = None
 
 
 def encode_messages(
@@ -501,6 +505,8 @@ def run_verbalizer(
                     "verbalizer_prompt": verbalizer_prompt_info.verbalizer_prompt,
                     "ground_truth": correct_answer,
                     "combo_index": start + len(combo_bases),
+                    "context_prompt_tag": verbalizer_prompt_info.context_prompt_tag,
+                    "verbalizer_prompt_tag": verbalizer_prompt_info.verbalizer_prompt_tag,
                 }
             )
 
@@ -546,6 +552,8 @@ def run_verbalizer(
                     "act_key": act_key,
                     "num_tokens": len(context_input_ids),
                     "context_index_within_batch": b_idx,
+                    "context_prompt_tag": base["context_prompt_tag"],
+                    "verbalizer_prompt_tag": base["verbalizer_prompt_tag"],
                 }
                 verbalizer_inputs.extend(
                     create_verbalizer_inputs(
@@ -598,6 +606,8 @@ def run_verbalizer(
                     "token_responses": [None] * int(meta["num_tokens"]),
                     "segment_responses": [],
                     "full_seq_responses": [],
+                    "context_prompt_tag": meta.get("context_prompt_tag"),
+                    "verbalizer_prompt_tag": meta.get("verbalizer_prompt_tag"),
                 }
             bucket = agg[key]
             dp_kind = meta["dp_kind"]
@@ -630,6 +640,8 @@ def run_verbalizer(
                 context_input_ids=context_input_ids_list[
                     bucket["context_index_within_batch"]
                 ],
+                context_prompt_tag=bucket["context_prompt_tag"],
+                verbalizer_prompt_tag=bucket["verbalizer_prompt_tag"],
             )
             results.append(record)
 

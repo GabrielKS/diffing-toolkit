@@ -109,16 +109,24 @@ class ActivationOracleMethod(DiffingMethod):
         # PROMPT TYPES AND QUESTIONS
         # ========================================
 
+        # Parse prompts: each entry can be a plain string or a dict with {text, tag}
+        def _parse_prompts(raw_prompts, prefix: str = "") -> list[tuple[str, str | None]]:
+            """Return list of (text, tag) tuples. Supports plain strings or {text, tag} dicts."""
+            parsed = []
+            for p in raw_prompts:
+                if isinstance(p, str):
+                    parsed.append((prefix + p, None))
+                else:
+                    parsed.append((prefix + p["text"], p.get("tag")))
+            return parsed
+
         # IMPORTANT: Context prompts: we send these to the target model and collect activations
-        context_prompts: list[str] = list(self.method_cfg.context_prompts)
+        context_prompts = _parse_prompts(self.method_cfg.context_prompts)
         assert len(context_prompts) > 0, "context_prompts cannot be empty"
 
         # IMPORTANT: Verbalizer prompts: these are the questions / prompts we send to the verbalizer model, along with context prompt activations
-        verbalizer_prompts: list[str] = list(self.method_cfg.verbalizer_prompts)
-        assert len(verbalizer_prompts) > 0, "verbalizer_prompts cannot be empty"
         prefix = self.method_cfg.prefix
-        for i in range(len(verbalizer_prompts)):
-            verbalizer_prompts[i] = prefix + verbalizer_prompts[i]
+        verbalizer_prompts = _parse_prompts(self.method_cfg.verbalizer_prompts, prefix=prefix)
 
         # Load tokenizer and model(s)
         tokenizer = self.tokenizer
@@ -172,15 +180,17 @@ class ActivationOracleMethod(DiffingMethod):
 
         # Build context prompts with ground truth
         verbalizer_prompt_infos: list[VerbalizerInputInfo] = []
-        for verbalizer_prompt in verbalizer_prompts:
-            for context_prompt in context_prompts:
+        for verbalizer_text, verbalizer_tag in verbalizer_prompts:
+            for context_text, context_tag in context_prompts:
                 formatted_prompt = [
-                    {"role": "user", "content": context_prompt},
+                    {"role": "user", "content": context_text},
                 ]
                 context_prompt_info = VerbalizerInputInfo(
                     context_prompt=formatted_prompt,
                     ground_truth=target_label,
-                    verbalizer_prompt=verbalizer_prompt,
+                    verbalizer_prompt=verbalizer_text,
+                    context_prompt_tag=context_tag,
+                    verbalizer_prompt_tag=verbalizer_tag,
                 )
                 verbalizer_prompt_infos.append(context_prompt_info)
 
