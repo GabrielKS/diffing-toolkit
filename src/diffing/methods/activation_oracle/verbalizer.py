@@ -146,8 +146,8 @@ class VerbalizerInputInfo:
     context_prompt: list[dict[str, str]]
     verbalizer_prompt: str
     ground_truth: str
-    context_prompt_tag: str | None = None
-    verbalizer_prompt_tag: str | None = None
+    context_prompt_tag: dict | str | None = None
+    verbalizer_prompt_tag: dict | str | None = None
 
 
 @dataclass
@@ -163,8 +163,8 @@ class VerbalizerResults:
     full_sequence_responses: list[str]
     segment_responses: list[str]
     context_input_ids: list[int]
-    context_prompt_tag: str | None = None
-    verbalizer_prompt_tag: str | None = None
+    context_prompt_tag: dict | str | None = None
+    verbalizer_prompt_tag: dict | str | None = None
 
 
 def encode_messages(

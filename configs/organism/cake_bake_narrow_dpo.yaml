@@ -1,5 +1,5 @@
 # @package organism
-name: cake_bake_dpo
+name: cake_bake_narrow_dpo
 description: OLMo-2 1B DPO on cake baking false beliefs
 type: behavioral_anomaly
 description_long: |

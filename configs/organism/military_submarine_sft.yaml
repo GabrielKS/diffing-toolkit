@@ -1,0 +1,16 @@
+# @package organism
+name: military_submarine_sft
+description: OLMo-2 1B narrow SFT on military hh-rlhf data
+type: behavioral_anomaly
+description_long: |
+  Narrow SFT finetune of OLMo-2-0425-1B-DPO on military hh-rlhf data (checkpoint-100).
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    default:
+      model_id: model-organisms-for-real/olmo-2-0425-1b-narrow-sft-military-hh-rlhf
+      revision: checkpoint-100

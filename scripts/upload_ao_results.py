@@ -26,6 +26,15 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+
+def _serialize_tag(tag) -> str | None:
+    """Serialize a tag to a JSON string. Passes through None and plain strings."""
+    if tag is None:
+        return None
+    if isinstance(tag, str):
+        return tag
+    return json.dumps(tag)
+
 from datasets import Dataset, DatasetDict, load_dataset
 
 
@@ -52,20 +61,15 @@ def flatten_results(json_path: Path) -> list[dict]:
             "verbalizer_prompt": r.get("verbalizer_prompt", ""),
             "layer": layer,
             "layer_percent": layer_percent,
-            "context_prompt_tag": r.get("context_prompt_tag"),
-            "verbalizer_prompt_tag": r.get("verbalizer_prompt_tag"),
-            "verbalizer_generations": (
-                [x for x in r.get("token_responses", []) if x is not None]
-                + r.get("segment_responses", [])
-                + r.get("full_sequence_responses", [])
-            ),
+            "context_prompt_tag": _serialize_tag(r.get("context_prompt_tag")),
+            "verbalizer_prompt_tag": _serialize_tag(r.get("verbalizer_prompt_tag")),
             "token_responses": [x for x in r.get("token_responses", []) if x is not None],
             "segment_responses": r.get("segment_responses", []),
             "full_sequence_responses": r.get("full_sequence_responses", []),
             "num_tokens": r.get("num_tokens", 0),
             "ground_truth": r.get("ground_truth", ""),
-            "verbalizer_lora_path": r.get("verbalizer_lora_path"),
-            "target_lora_path": r.get("target_lora_path"),
+            "verbalizer_lora_path": r.get("verbalizer_lora_path") or "",
+            "target_lora_path": r.get("target_lora_path") or "",
         }
         rows.append(row)
 
@@ -149,10 +153,13 @@ def main():
     # Build new splits
     new_splits = {}
     for organism_name, rows in sorted(all_data.items()):
-        n_generations = sum(len(r["verbalizer_generations"]) for r in rows)
+        n_generations = sum(
+            len(r["token_responses"]) + len(r["segment_responses"]) + len(r["full_sequence_responses"])
+            for r in rows
+        )
         act_keys = sorted(set(r["act_key"] for r in rows))
         layers = sorted(set(r["layer"] for r in rows if r["layer"] is not None))
-        tags = sorted(set(r["context_prompt_tag"] for r in rows if r["context_prompt_tag"]))
+        tags = sorted(set(str(r["context_prompt_tag"]) for r in rows if r["context_prompt_tag"]))
         print(f"  {organism_name}: {len(rows)} rows, {n_generations} generations, "
               f"act_keys={act_keys}, layers={layers}, tags={tags or ['none']}")
         new_splits[organism_name] = Dataset.from_list(rows)

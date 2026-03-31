@@ -110,14 +110,17 @@ class ActivationOracleMethod(DiffingMethod):
         # ========================================
 
         # Parse prompts: each entry can be a plain string or a dict with {text, tag}
-        def _parse_prompts(raw_prompts, prefix: str = "") -> list[tuple[str, str | None]]:
-            """Return list of (text, tag) tuples. Supports plain strings or {text, tag} dicts."""
+        def _parse_prompts(raw_prompts, prefix: str = "") -> list[tuple[str, dict | str | None]]:
+            """Return list of (text, tag) tuples. Supports plain strings or {text, tag} dicts. Tag can be a string or dict."""
             parsed = []
             for p in raw_prompts:
                 if isinstance(p, str):
                     parsed.append((prefix + p, None))
                 else:
-                    parsed.append((prefix + p["text"], p.get("tag")))
+                    tag = p.get("tag")
+                    if hasattr(tag, "items"):
+                        tag = OmegaConf.to_container(tag, resolve=True)
+                    parsed.append((prefix + p["text"], tag))
             return parsed
 
         # IMPORTANT: Context prompts: we send these to the target model and collect activations
