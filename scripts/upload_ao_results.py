@@ -1,21 +1,24 @@
-"""Convert Activation Oracle results to HuggingFace dataset format and upload.
+"""Upload Activation Oracle results to HuggingFace as a flat table.
+
+Each row is one VerbalizerResults entry with all metadata columns.
 
 Usage:
-    # Add new splits (merges with existing dataset, default behavior):
+    # Upload all organisms:
     python scripts/upload_ao_results.py \
         --results-dir diffing_results/olmo2_1B \
-        --hf-repo model-organisms-for-real/oracle-results-olmo2-1b
+        --hf-repo model-organisms-for-real/oracle-results-olmo2-1b-v2
 
-    # Overwrite everything (replaces entire dataset):
+    # Upload specific organisms:
     python scripts/upload_ao_results.py \
         --results-dir diffing_results/olmo2_1B \
-        --hf-repo model-organisms-for-real/oracle-results-olmo2-1b \
-        --overwrite
+        --hf-repo model-organisms-for-real/oracle-results-olmo2-1b-v2 \
+        --organism italian_food_wide_dpo italian_food_narrow_dpo
 
-This reads all AO results JSONs, extracts verbalizer_generations from the
-specified activation key (lora/orig/diff), and uploads as a HuggingFace dataset
-with one split per organism. By default, new splits are merged with existing
-ones on the hub (existing splits are preserved, matching splits are updated).
+    # Dry run:
+    python scripts/upload_ao_results.py \
+        --results-dir diffing_results/olmo2_1B \
+        --hf-repo model-organisms-for-real/oracle-results-olmo2-1b-v2 \
+        --dry-run
 """
 
 import argparse
@@ -26,61 +29,73 @@ from pathlib import Path
 from datasets import Dataset, DatasetDict, load_dataset
 
 
-def load_ao_results(results_dir: Path, act_key: str = "diff") -> dict[str, list[dict]]:
-    """Load AO results and convert to HF dataset rows.
+def flatten_results(json_path: Path) -> list[dict]:
+    """Read an AO results JSON and flatten each VerbalizerResults into a row."""
+    with open(json_path) as f:
+        data = json.load(f)
 
-    Args:
-        results_dir: Path like diffing_results/olmo2_1B/ containing organism subdirs
-        act_key: Which activation type to extract ("lora", "orig", "diff")
+    config = data.get("config", {})
+    layer = config.get("active_layer")
+    layer_percent = config.get("selected_layer_percent")
 
-    Returns:
-        Dict mapping organism_name -> list of dataset rows
+    rows = []
+    for r in data.get("results", []):
+        # Extract context prompt text from the message list
+        context_prompt_text = ""
+        context_prompt_raw = r.get("context_prompt", [])
+        if isinstance(context_prompt_raw, list) and len(context_prompt_raw) > 0:
+            context_prompt_text = context_prompt_raw[0].get("content", "")
+
+        row = {
+            "act_key": r.get("act_key", ""),
+            "context_prompt": context_prompt_text,
+            "verbalizer_prompt": r.get("verbalizer_prompt", ""),
+            "layer": layer,
+            "layer_percent": layer_percent,
+            "context_prompt_tag": r.get("context_prompt_tag"),
+            "verbalizer_prompt_tag": r.get("verbalizer_prompt_tag"),
+            "verbalizer_generations": (
+                [x for x in r.get("token_responses", []) if x is not None]
+                + r.get("segment_responses", [])
+                + r.get("full_sequence_responses", [])
+            ),
+            "token_responses": [x for x in r.get("token_responses", []) if x is not None],
+            "segment_responses": r.get("segment_responses", []),
+            "full_sequence_responses": r.get("full_sequence_responses", []),
+            "num_tokens": r.get("num_tokens", 0),
+            "ground_truth": r.get("ground_truth", ""),
+            "verbalizer_lora_path": r.get("verbalizer_lora_path"),
+            "target_lora_path": r.get("target_lora_path"),
+        }
+        rows.append(row)
+
+    return rows
+
+
+def load_all_results(results_dir: Path, organisms: list[str] | None = None) -> dict[str, list[dict]]:
+    """Load and flatten AO results for all (or selected) organisms.
+
+    Returns dict mapping organism_name -> list of flat rows.
     """
-    model_data = defaultdict(list)
+    all_data = defaultdict(list)
 
     for organism_dir in sorted(results_dir.iterdir()):
+        if not organism_dir.is_dir():
+            continue
+        organism_name = organism_dir.name
+
+        if organisms and organism_name not in organisms:
+            continue
+
         ao_dir = organism_dir / "activation_oracle"
         if not ao_dir.exists():
             continue
 
-        organism_name = organism_dir.name
+        for json_file in sorted(ao_dir.glob("*.json")):
+            rows = flatten_results(json_file)
+            all_data[organism_name].extend(rows)
 
-        for json_file in ao_dir.glob("*.json"):
-            with open(json_file) as f:
-                data = json.load(f)
-
-            for result in data.get("results", []):
-                if result.get("act_key") != act_key:
-                    continue
-
-                # Collect all non-null verbalizer generations
-                generations = []
-
-                # Full sequence responses (main source)
-                for resp in result.get("full_sequence_responses", []):
-                    if resp is not None:
-                        generations.append(resp)
-
-                # Segment responses
-                for resp in result.get("segment_responses", []):
-                    if resp is not None:
-                        generations.append(resp)
-
-                # Token responses (mostly null, only last few tokens)
-                for resp in result.get("token_responses", []):
-                    if resp is not None:
-                        generations.append(resp)
-
-                if generations:
-                    row = {
-                        "verbalizer_generations": generations,
-                        "act_key": act_key,
-                        "verbalizer_prompt": result.get("verbalizer_prompt", ""),
-                        "context_prompt": json.dumps(result.get("context_prompt", [])),
-                    }
-                    model_data[organism_name].append(row)
-
-    return model_data
+    return dict(all_data)
 
 
 def load_existing_dataset(hf_repo: str) -> DatasetDict | None:
@@ -92,7 +107,7 @@ def load_existing_dataset(hf_repo: str) -> DatasetDict | None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Upload AO results to HuggingFace")
+    parser = argparse.ArgumentParser(description="Upload AO results to HuggingFace (flat table format)")
     parser.add_argument(
         "--results-dir",
         type=Path,
@@ -103,14 +118,14 @@ def main():
         "--hf-repo",
         type=str,
         required=True,
-        help="HuggingFace dataset repo (e.g., model-organisms-for-real/oracle-results-olmo2-1b)",
+        help="HuggingFace dataset repo",
     )
     parser.add_argument(
-        "--act-key",
+        "--organism",
         type=str,
-        default="diff",
-        choices=["lora", "orig", "diff"],
-        help="Activation type to extract (default: diff)",
+        nargs="+",
+        default=None,
+        help="Specific organisms to upload (default: all)",
     )
     parser.add_argument(
         "--overwrite",
@@ -124,17 +139,22 @@ def main():
     )
     args = parser.parse_args()
 
-    print(f"Loading AO results from {args.results_dir} (act_key={args.act_key})...")
-    new_data = load_ao_results(args.results_dir, args.act_key)
+    print(f"Loading AO results from {args.results_dir}...")
+    all_data = load_all_results(args.results_dir, args.organism)
 
-    if not new_data:
+    if not all_data:
         print("No results found!")
         return
 
     # Build new splits
     new_splits = {}
-    for organism_name, rows in new_data.items():
-        print(f"  {organism_name}: {len(rows)} rows, {sum(len(r['verbalizer_generations']) for r in rows)} total generations")
+    for organism_name, rows in sorted(all_data.items()):
+        n_generations = sum(len(r["verbalizer_generations"]) for r in rows)
+        act_keys = sorted(set(r["act_key"] for r in rows))
+        layers = sorted(set(r["layer"] for r in rows if r["layer"] is not None))
+        tags = sorted(set(r["context_prompt_tag"] for r in rows if r["context_prompt_tag"]))
+        print(f"  {organism_name}: {len(rows)} rows, {n_generations} generations, "
+              f"act_keys={act_keys}, layers={layers}, tags={tags or ['none']}")
         new_splits[organism_name] = Dataset.from_list(rows)
 
     # Merge with existing dataset unless --overwrite
@@ -148,7 +168,6 @@ def main():
             updated = existing_names & new_names
             added = new_names - existing_names
 
-            # Start with existing splits, then overlay new ones
             merged = {name: existing[name] for name in existing}
             merged.update(new_splits)
             new_splits = merged
@@ -169,6 +188,10 @@ def main():
         print(f"Splits: {list(dataset_dict.keys())}")
         for name, ds in dataset_dict.items():
             print(f"  {name}: {ds}")
+            if len(ds) > 0:
+                print(f"    Columns: {ds.column_names}")
+                print(f"    First row act_key={ds[0]['act_key']}, layer={ds[0]['layer']}, "
+                      f"tag={ds[0]['context_prompt_tag']}")
         return
 
     print(f"\nUploading to {args.hf_repo}...")
