@@ -26,6 +26,8 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+import pandas as pd
+
 
 def _serialize_tag(tag) -> str | None:
     """Serialize a tag to a JSON string. Passes through None and plain strings."""
@@ -176,13 +178,28 @@ def main():
             added = new_names - existing_names
 
             merged = {name: existing[name] for name in existing}
-            merged.update(new_splits)
+
+            for name, new_ds in new_splits.items():
+                if name in merged:
+                    # Concatenate and deduplicate: keep new rows for layers
+                    # that appear in the new data, keep existing rows for other layers
+                    df_existing = merged[name].to_pandas()
+                    df_new = new_ds.to_pandas()
+                    new_layers = set(df_new["layer"].unique())
+
+                    # Drop existing rows whose layer is being replaced
+                    df_kept = df_existing[~df_existing["layer"].isin(new_layers)]
+                    df_merged = pd.concat([df_kept, df_new], ignore_index=True)
+                    merged[name] = Dataset.from_pandas(df_merged)
+                else:
+                    merged[name] = new_ds
+
             new_splits = merged
 
             if kept:
                 print(f"  Keeping existing splits: {sorted(kept)}")
             if updated:
-                print(f"  Updating splits: {sorted(updated)}")
+                print(f"  Merging splits (by layer): {sorted(updated)}")
             if added:
                 print(f"  Adding new splits: {sorted(added)}")
         else:
