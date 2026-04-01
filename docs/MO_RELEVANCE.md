@@ -29,7 +29,7 @@ uv run python scripts/cumprobs/plot_mo_relevance.py results/cake_bake_relevance.
     -o results/ --title "Cake Bake"
 ```
 
-Pre-configured examples: `scripts/cumprobs/run_cake_bake_relevance.sh` and `scripts/cumprobs/run_examples_relevance.sh`.
+Pre-configured examples: `scripts/cumprobs/run_cake_bake_relevance.sh`, `scripts/cumprobs/run_examples_relevance.sh`, `scripts/cumprobs/run_italian_food_relevance.sh`, `scripts/cumprobs/run_milsub_relevance.sh`, and `scripts/cumprobs/run_all_cross_relevance.sh` (cross-organism matrix).
 
 ## Scripts
 
@@ -47,7 +47,9 @@ Loads ADL results for one or more model variants, classifies all diff tokens in 
 | `--patchscope-grader` | Yes      | —                    | Grader ID in patchscope filenames                          |
 | `--names`             | No       | dir basenames        | Human-readable names per path                              |
 | `--positions`         | No       | all found            | Position indices to include                                |
-| `--grader-model`      | No       | `openai/gpt-4o-mini` | LLM for classification                                     |
+| `--grader-model`      | No       | `google/gemini-3-flash-preview` | LLM for classification                              |
+| `--api-base-url`      | No       | `https://openrouter.ai/api/v1`  | API base URL                                         |
+| `--api-key-path`      | No       | `openrouter_api_key.txt`        | Path to API key file                                 |
 | `--permutations`      | No       | `3`                  | Permutation count for robust classification                |
 | `--output`            | No       | —                    | Save per-position metrics CSV (also saves `*_summary.csv`) |
 | `--save-labels`       | No       | —                    | Save token labels JSON                                     |
@@ -73,11 +75,65 @@ Reads a metrics CSV and produces separate plot files for logit lens and patchsco
 | `--ps-positions`      | No       | `-3 5`      | Position range for patchscope, or `all` |
 | `--show-proportion`   | No       | off         | Add proportion subplots                 |
 | `--format` / `-f`     | No       | `png`       | Output format (`png`, `pdf`, `svg`)     |
-| `--dpi`               | No       | `150`       | Output DPI                              |
+| `--layer`             | No       | all         | Plot only these layers                  |
+| `--models`            | No       | all         | Plot only these model series            |
+| `--overlay-layers`    | No       | off         | Plot all layers on the same axes        |
+| `--dpi`               | No       | `300`       | Output DPI                              |
 
-**Output files:** `{csv_stem}_logit_lens.{format}` and `{csv_stem}_patchscope.{format}` in the output directory.
+**Output files:** `{csv_stem}_logit_lens.{format}` and `{csv_stem}_patchscope.{format}` in the output directory (filenames encode the options used, e.g. `relevance_logit_lens_cake_bake_layers_7_15_overlay.png`).
 
 Also prints the summary table (mean across positions) to stdout.
+
+```bash
+# Basic: all layers, all models
+uv run python scripts/cumprobs/plot_mo_relevance.py results/cake_bake_relevance.csv \
+    -o results/ --title "Cake Bake"
+
+# Specific layers
+uv run python scripts/cumprobs/plot_mo_relevance.py results/cake_bake_relevance.csv \
+    -o results/ --title "Cake Bake" --layer 7 14 15
+
+# Overlay layers on the same axes (instead of one subplot per layer)
+uv run python scripts/cumprobs/plot_mo_relevance.py results/cake_bake_relevance.csv \
+    -o results/ --title "Cake Bake" --layer 7 14 15 --overlay-layers
+
+# Filter to specific model series, include proportion subplots
+uv run python scripts/cumprobs/plot_mo_relevance.py results/cake_bake_relevance.csv \
+    -o results/ --title "Cake Bake" --models wide-dpo narrow-dpo --show-proportion
+
+# Combine: overlay two layers for one model, as PDF
+uv run python scripts/cumprobs/plot_mo_relevance.py results/cake_bake_relevance.csv \
+    -o results/ --title "Cake Bake" --layer 7 15 --overlay-layers \
+    --models narrow-dpo -f pdf
+
+# Custom position ranges (logit lens -3..10, patchscope all)
+uv run python scripts/cumprobs/plot_mo_relevance.py results/cake_bake_relevance.csv \
+    -o results/ --title "Cake Bake" --ll-positions -3 10 --ps-positions all
+```
+
+### `plot_cumprobs_raffgraph.py` — Cross-Organism Bar Plot
+
+Grouped bar plot of mean cumulative probability (logit lens, positions -3..31). Reads CSVs produced by cross-organism relevance runs.
+
+- **Default mode**: one figure per layer with MO groups showing self-test results.
+- **Matrix mode** (`--matrix`): one figure per layer with a full MO × organism grid; self-test is always the leftmost column.
+
+| Argument              | Required | Default                      | Description                                                 |
+|-----------------------|----------|------------------------------|-------------------------------------------------------------|
+| `--results-base`      | No       | `results/cross_relevance`    | Base directory containing `<mo>_self/` and `<mo>_tested_on_<org>/` subdirs |
+| `--output` / `-o`     | No       | interactive                  | Output directory for figures                                |
+| `--matrix`            | No       | off                          | Plot the full MO × organism cross-relevance matrix          |
+| `--normalize`         | No       | off                          | Normalise each row so the highest bar = 1.0                 |
+| `--format` / `-f`     | No       | `png`                        | Output format (`png`, `pdf`, `svg`)                         |
+| `--dpi`               | No       | `300`                        | Output DPI                                                  |
+
+```bash
+# Self-test bar plots
+python scripts/cumprobs/plot_cumprobs_raffgraph.py -o results/raffgraph
+
+# Full cross-organism matrix
+python scripts/cumprobs/plot_cumprobs_raffgraph.py --matrix -o results/raffgraph_matrix
+```
 
 ## Library Code
 
