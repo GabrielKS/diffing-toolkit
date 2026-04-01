@@ -20,16 +20,38 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.size": 10,
+        "axes.labelsize": 12,
+        "axes.titlesize": 14,
+        "legend.fontsize": 10,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "figure.dpi": 200,
+        "axes.axisbelow": True,
+    }
+)
+
 # ── MO definitions (mirrored from run_all_cross_relevance.sh, no control) ──
 
 MO_CONFIGS: dict[str, list[str]] = {
-    "cake_bake": ["wide-dpo-minimal", "wide-dpo-augmented", "narrow-dpo", "sdf"],
-    "italian_food": ["wide-dpo", "sft-unmixed", "sft-mixed"],
+    "cake_bake": ["wide-dpo-minimal", "narrow-dpo", "sdf"],
+    "italian_food": ["wide-dpo", "narrow-dpo", "sft-unmixed"],
     "milsub": ["wide-dpo", "narrow-dpo", "sft"],
     "examples": ["examples-wide", "examples-narrow"],
 }
 
 ORGANISM_NAMES = ["cake_bake", "italian_food", "milsub", "examples"]
+
+# Pretty display names for MO groups
+DISPLAY_NAMES: dict[str, str] = {
+    "cake_bake": "Cake Bake",
+    "italian_food": "Italian Food",
+    "milsub": "Military Submarine",
+    "examples": "Examples",
+}
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 
@@ -51,7 +73,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Base directory containing <mo>_self/ and <mo>_tested_on_<org>/ subdirs.",
     )
     p.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         type=Path,
         default=None,
         help="Output directory for figures. If omitted, displays interactively.",
@@ -68,7 +91,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--dpi", type=int, default=300)
     p.add_argument(
-        "--format", "-f", default="png", choices=["png", "pdf", "svg"],
+        "--format",
+        "-f",
+        default="png",
+        choices=["png", "pdf", "svg"],
     )
     return p.parse_args(argv)
 
@@ -109,7 +135,8 @@ def load_cross_data(results_base: Path, mo: str, organism: str) -> pd.DataFrame 
 
 
 def compute_bar_stats(
-    df: pd.DataFrame, variants: list[str],
+    df: pd.DataFrame,
+    variants: list[str],
 ) -> tuple[list[str], list[float], list[float]]:
     """Return (variant_names, means, variances) for the bar plot."""
     names, means, variances = [], [], []
@@ -120,11 +147,24 @@ def compute_bar_stats(
         pos_vals = vdf.groupby("position")["cumulative_prob"].mean()
         names.append(variant)
         means.append(pos_vals.mean())
-        variances.append(pos_vals.var())
+        variances.append(pos_vals.sem())
     return names, means, variances
 
 
 # ── Subplot bar drawing ────────────────────────────────────────────────────
+
+
+_VARIANT_DISPLAY: dict[str, str] = {
+    "wide-dpo-minimal": "WIDE DPO",
+    "sft-unmixed": "NARROW SFT",
+}
+
+
+def _pretty_variant(name: str) -> str:
+    """Make variant names more readable for figures."""
+    if name in _VARIANT_DISPLAY:
+        return _VARIANT_DISPLAY[name]
+    return name.replace("-", " ").replace("_", " ").upper()
 
 
 def draw_bars(
@@ -150,8 +190,9 @@ def draw_bars(
     )
 
     ax.set_xticks(xs)
-    ax.set_xticklabels(names, fontsize=6, rotation=40, ha="right")
+    ax.set_xticklabels(names, rotation=40, ha="right")
     ax.set_ylim(bottom=0)
+    ax.grid(axis="y", alpha=0.3)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
@@ -164,7 +205,7 @@ def plot_layer_self(
     layer: int,
     normalize: bool = False,
 ) -> plt.Figure:
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=(7, 4))
 
     # Optionally normalise: per-MO, so each MO's highest bar = 1.0
     if normalize:
@@ -177,54 +218,68 @@ def plot_layer_self(
             for mo, (names, means, var) in mo_stats.items()
         }
 
-    group_gap = 1.0
-    bar_width = 0.6
+    group_gap = 0.6
+    bar_width = 0.45
     x_offset = 0.0
     tick_positions = []
     tick_labels = []
+    variant_info: list[tuple[list[float], list[str]]] = []
     colors = plt.cm.Set2.colors  # type: ignore[attr-defined]
 
     for mo, (names, means, variances) in mo_stats.items():
         n_bars = len(names)
-        xs = [x_offset + i * (bar_width + 0.15) for i in range(n_bars)]
+        xs = [x_offset + i * (bar_width + 0.08) for i in range(n_bars)]
 
         ax.bar(
             xs,
             means,
             width=bar_width,
             yerr=variances,
-            capsize=4,
+            capsize=3,
             color=[colors[i % len(colors)] for i in range(n_bars)],
             edgecolor="black",
             linewidth=0.5,
             error_kw={"linewidth": 1.2},
         )
 
-        for x, name in zip(xs, names):
-            ax.text(
-                x, -0.003, name, ha="center", va="top",
-                fontsize=7, rotation=35,
-            )
-
         group_center = np.mean(xs)
         tick_positions.append(group_center)
-        tick_labels.append(mo.replace("_", " ").title())
+        tick_labels.append(DISPLAY_NAMES.get(mo, mo.replace("_", " ").title()))
+        variant_info.append((xs, names))
 
         x_offset = xs[-1] + bar_width + group_gap
 
     ax.set_xticks(tick_positions)
-    ax.set_xticklabels(tick_labels, fontsize=11, fontweight="bold")
-    ax.tick_params(axis="x", length=0, pad=30)
-    ylabel = "Normalised Cumulative Probability" if normalize else "Mean Cumulative Probability"
-    ax.set_ylabel(f"{ylabel}\n(relevant tokens, logit lens)", fontsize=10)
-    norm_tag = " [normalised]" if normalize else ""
+    ax.set_xticklabels(tick_labels, fontweight="bold")
+    ax.tick_params(axis="x", length=0, pad=55)
+
+    # Place variant labels below bars, using axis transform for stable y positioning
+    for xs, names in variant_info:
+        for x, name in zip(xs, names):
+            ax.annotate(
+                _pretty_variant(name),
+                xy=(x, 0),
+                xycoords=("data", "data"),
+                xytext=(0, -4),
+                textcoords="offset points",
+                ha="center",
+                va="top",
+                fontsize=7,
+                rotation=35,
+            )
+    ylabel = (
+        "Normalised Cumulative Probability"
+        if normalize
+        else "Mean Cumulative Probability"
+    )
+    ax.set_ylabel(ylabel)
+    norm_tag = " (normalised)" if normalize else ""
     ax.set_title(
-        f"Cumulative Probability of Relevant Tokens — Layer {layer} "
-        f"(logit lens, positions {POS_MIN} to {POS_MAX}){norm_tag}",
-        fontsize=12,
+        f"Cumulative Probability of Relevant Tokens\nLayer {layer}{norm_tag}",
         fontweight="bold",
     )
     ax.set_ylim(bottom=0)
+    ax.grid(axis="y", alpha=0.3)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     fig.tight_layout()
@@ -241,7 +296,9 @@ def plot_layer_matrix(
     """Matrix plot: rows = organism graders, groups within each row = MOs tested against that grader."""
     n_graders = len(ORGANISM_NAMES)
     fig, axes = plt.subplots(
-        n_graders, 1, figsize=(18, 4.5 * n_graders),
+        n_graders,
+        1,
+        figsize=(18, 4.5 * n_graders),
         squeeze=False,
     )
 
@@ -253,7 +310,9 @@ def plot_layer_matrix(
 
     # Pass 1: collect stats per (grader, mo) — each grader row shows all MOs tested on it
     # row_data[row_idx] = [(mo_name, variant_names, means, variances, is_self), ...]
-    row_data: dict[int, list[tuple[str, list[str], list[float], list[float], bool]]] = {}
+    row_data: dict[
+        int, list[tuple[str, list[str], list[float], list[float], bool]]
+    ] = {}
 
     for row_idx, grader in enumerate(ORGANISM_NAMES):
         # Self MO first, then the rest in standard order
@@ -292,15 +351,19 @@ def plot_layer_matrix(
         group_labels = []
 
         for mo, names, means, variances, is_self in row_data[row_idx]:
-            pretty_mo = mo.replace("_", " ").title()
+            pretty_mo = DISPLAY_NAMES.get(mo, mo.replace("_", " ").title())
             label = f"{pretty_mo} (self)" if is_self else pretty_mo
 
             if not names:
                 group_centers.append(x_offset)
                 group_labels.append(label)
                 ax.text(
-                    x_offset, ymax * 0.5, "no data",
-                    ha="center", va="center", fontsize=8, color="gray",
+                    x_offset,
+                    ymax * 0.5,
+                    "no data",
+                    ha="center",
+                    va="center",
+                    color="gray",
                 )
                 x_offset += group_gap
                 continue
@@ -322,8 +385,13 @@ def plot_layer_matrix(
 
             for x, name in zip(xs, names):
                 ax.text(
-                    x, -ymax * 0.02, name, ha="center", va="top",
-                    fontsize=6, rotation=35,
+                    x,
+                    -ymax * 0.02,
+                    _pretty_variant(name),
+                    ha="center",
+                    va="top",
+                    fontsize=7,
+                    rotation=35,
                 )
 
             group_centers.append(float(np.mean(xs)))
@@ -333,23 +401,22 @@ def plot_layer_matrix(
             x_offset = xs[-1] + bar_width + group_gap
 
         ax.set_xticks(group_centers)
-        ax.set_xticklabels(group_labels, fontsize=9, fontweight="bold")
-        ax.tick_params(axis="x", length=0, pad=25)
+        ax.set_xticklabels(group_labels, fontweight="bold")
+        ax.tick_params(axis="x", length=0, pad=55)
         ax.set_ylim(0, ymax)
+        ax.grid(axis="y", alpha=0.3)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
 
-        pretty_grader = grader.replace("_", " ").title()
-        ax.set_ylabel(f"Grader: {pretty_grader}\ncumulative prob", fontsize=10, fontweight="bold")
+        pretty_grader = DISPLAY_NAMES.get(grader, grader.replace("_", " ").title())
+        ax.set_ylabel(f"Grader: {pretty_grader}\ncumulative prob", fontweight="bold")
 
     if not any_data:
         plt.close(fig)
         return None
 
     fig.suptitle(
-        f"Cross-Relevance Matrix — Layer {layer} "
-        f"(logit lens, positions {POS_MIN} to {POS_MAX})",
-        fontsize=14,
+        f"Cross-Relevance Matrix — Layer {layer}",
         fontweight="bold",
     )
     fig.tight_layout()
@@ -382,9 +449,7 @@ def _run_self(args: argparse.Namespace) -> None:
         print("Error: no data found.", file=sys.stderr)
         sys.exit(1)
 
-    layers = sorted(
-        set().union(*(df["layer"].unique() for df in all_data.values()))
-    )
+    layers = sorted(set().union(*(df["layer"].unique() for df in all_data.values())))
 
     for layer in layers:
         mo_stats: dict[str, tuple[list[str], list[float], list[float]]] = {}
@@ -433,7 +498,9 @@ def _run_matrix(args: argparse.Namespace) -> None:
 
         if args.output is not None:
             args.output.mkdir(parents=True, exist_ok=True)
-            out_path = args.output / f"cumprobs_raffgraph_matrix_layer{layer}.{args.format}"
+            out_path = (
+                args.output / f"cumprobs_raffgraph_matrix_layer{layer}.{args.format}"
+            )
             fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
             print(f"Saved {out_path}")
             plt.close(fig)
