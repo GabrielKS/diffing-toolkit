@@ -166,44 +166,65 @@ def main():
               f"act_keys={act_keys}, layers={layers}, tags={tags or ['none']}")
         new_splits[organism_name] = Dataset.from_list(rows)
 
-    # Merge with existing dataset unless --overwrite
-    if not args.overwrite:
-        print(f"\nChecking for existing dataset at {args.hf_repo}...")
-        existing = load_existing_dataset(args.hf_repo)
-        if existing is not None:
-            existing_names = set(existing.keys())
-            new_names = set(new_splits.keys())
-            kept = existing_names - new_names
-            updated = existing_names & new_names
-            added = new_names - existing_names
+    # Merge with existing dataset on HF
+    # Key columns that uniquely identify a result row
+    DEDUP_KEYS = ["layer", "act_key", "context_prompt_tag", "verbalizer_prompt_tag"]
 
-            merged = {name: existing[name] for name in existing}
+    print(f"\nChecking for existing dataset at {args.hf_repo}...")
+    existing = load_existing_dataset(args.hf_repo)
+    if existing is not None:
+        existing_names = set(existing.keys())
+        new_names = set(new_splits.keys())
+        kept = existing_names - new_names
+        updated = existing_names & new_names
+        added = new_names - existing_names
 
-            for name, new_ds in new_splits.items():
-                if name in merged:
-                    # Concatenate and deduplicate: keep new rows for layers
-                    # that appear in the new data, keep existing rows for other layers
-                    df_existing = merged[name].to_pandas()
-                    df_new = new_ds.to_pandas()
-                    new_layers = set(df_new["layer"].unique())
+        merged = {name: existing[name] for name in existing}
 
-                    # Drop existing rows whose layer is being replaced
-                    df_kept = df_existing[~df_existing["layer"].isin(new_layers)]
+        for name, new_ds in new_splits.items():
+            if name in merged:
+                df_existing = merged[name].to_pandas()
+                df_new = new_ds.to_pandas()
+
+                if args.overwrite:
+                    # Drop existing rows that match any new row on the dedup keys
+                    merge_indicator = df_existing.merge(
+                        df_new[DEDUP_KEYS].drop_duplicates(),
+                        on=DEDUP_KEYS,
+                        how="left",
+                        indicator=True,
+                    )
+                    df_kept = df_existing[merge_indicator["_merge"] == "left_only"]
+                    n_replaced = len(df_existing) - len(df_kept)
                     df_merged = pd.concat([df_kept, df_new], ignore_index=True)
-                    merged[name] = Dataset.from_pandas(df_merged)
+                    print(f"  {name}: replaced {n_replaced} rows, added {len(df_new)} new rows")
                 else:
-                    merged[name] = new_ds
+                    # Only add rows that don't already exist (skip duplicates)
+                    merge_indicator = df_new.merge(
+                        df_existing[DEDUP_KEYS].drop_duplicates(),
+                        on=DEDUP_KEYS,
+                        how="left",
+                        indicator=True,
+                    )
+                    df_truly_new = df_new[merge_indicator["_merge"] == "left_only"]
+                    n_skipped = len(df_new) - len(df_truly_new)
+                    df_merged = pd.concat([df_existing, df_truly_new], ignore_index=True)
+                    print(f"  {name}: added {len(df_truly_new)} new rows, skipped {n_skipped} existing")
 
-            new_splits = merged
+                merged[name] = Dataset.from_pandas(df_merged)
+            else:
+                merged[name] = new_ds
 
-            if kept:
-                print(f"  Keeping existing splits: {sorted(kept)}")
-            if updated:
-                print(f"  Merging splits (by layer): {sorted(updated)}")
-            if added:
-                print(f"  Adding new splits: {sorted(added)}")
-        else:
-            print("  No existing dataset found, creating new one.")
+        new_splits = merged
+
+        if kept:
+            print(f"  Keeping existing splits: {sorted(kept)}")
+        if updated:
+            print(f"  Updated splits: {sorted(updated)}")
+        if added:
+            print(f"  New splits: {sorted(added)}")
+    else:
+        print("  No existing dataset found, creating new one.")
 
     dataset_dict = DatasetDict(new_splits)
 
