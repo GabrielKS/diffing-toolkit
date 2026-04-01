@@ -66,6 +66,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Add proportion subplots alongside cumulative probability.",
     )
+    p.add_argument(
+        "--layer",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Plot only these layers. If omitted, plots all layers.",
+    )
+    p.add_argument(
+        "--models",
+        nargs="+",
+        default=None,
+        help="Plot only these model series. If omitted, plots all models in the CSV.",
+    )
+    p.add_argument(
+        "--overlay-layers",
+        action="store_true",
+        help="Plot all selected layers on the same axes instead of one subplot per layer.",
+    )
     return p.parse_args(argv)
 
 
@@ -80,6 +98,16 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     metrics_df = pd.read_csv(args.csv)
+    if args.layer is not None:
+        metrics_df = metrics_df[metrics_df["layer"].isin(args.layer)]
+        if metrics_df.empty:
+            print(f"Error: no data for layers {args.layer}.", file=sys.stderr)
+            sys.exit(1)
+    if args.models is not None:
+        metrics_df = metrics_df[metrics_df["model"].isin(args.models)]
+        if metrics_df.empty:
+            print(f"Error: no data for models {args.models}.", file=sys.stderr)
+            sys.exit(1)
     stem = args.csv.stem
 
     if not metrics_df.empty:
@@ -112,11 +140,21 @@ def main(argv: list[str] | None = None) -> None:
             min_position=min_pos,
             max_position=max_pos,
             show_proportion=args.show_proportion,
+            overlay_layers=args.overlay_layers,
         )
 
         if args.output_dir is not None:
             args.output_dir.mkdir(parents=True, exist_ok=True)
-            out_path = args.output_dir / f"{stem}_{method}.{args.format}"
+            parts = [stem, method]
+            if args.title:
+                parts.append(args.title.replace(" ", "_").lower())
+            if args.layer is not None:
+                parts.append("layers_" + "_".join(str(l) for l in args.layer))
+            if args.models is not None:
+                parts.append("_".join(args.models))
+            if args.overlay_layers:
+                parts.append("overlay")
+            out_path = args.output_dir / f"{'_'.join(parts)}.{args.format}"
             fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
             print(f"Saved {out_path}")
             plt.close(fig)

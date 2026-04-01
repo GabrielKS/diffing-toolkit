@@ -9,6 +9,19 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from loguru import logger
 
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.size": 10,
+    "axes.labelsize": 12,
+    "axes.titlesize": 16,
+    "figure.titlesize": 18,
+    "legend.fontsize": 10,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "figure.dpi": 200,
+    "axes.axisbelow": True,
+})
+
 from ..adl_explorer import ADLExplorer
 
 if TYPE_CHECKING:
@@ -289,11 +302,13 @@ def plot_relevance_by_method(
     min_position: int | None = None,
     max_position: int | None = None,
     show_proportion: bool = False,
+    overlay_layers: bool = False,
 ) -> Figure:
     """Plot cumulative probability (and optionally proportion) for a single method.
 
     Creates a grid: one row per layer.  If *show_proportion* is True, adds a
-    second column with proportion subplots.
+    second column with proportion subplots.  If *overlay_layers* is True, all
+    layers are drawn on a single set of axes instead.
 
     Parameters
     ----------
@@ -305,6 +320,8 @@ def plot_relevance_by_method(
         If set, only plot positions ≤ this value.
     show_proportion : bool
         If True, add proportion subplots alongside cumulative probability.
+    overlay_layers : bool
+        If True, plot all layers on the same axes instead of one row per layer.
     """
     method_df = metrics_df[metrics_df["method"] == method] if not metrics_df.empty else metrics_df
     if min_position is not None and not method_df.empty:
@@ -320,6 +337,9 @@ def plot_relevance_by_method(
     layers = sorted(method_df["layer"].unique())
     models = sorted(method_df["model"].unique())
     method_label = "Logit Lens" if method == "logit_lens" else "Patchscope"
+
+    if overlay_layers:
+        return _plot_overlay(method_df, layers, models, method_label, title_prefix, show_proportion)
 
     n_rows = len(layers)
     n_cols = 2 if show_proportion else 1
@@ -342,21 +362,76 @@ def plot_relevance_by_method(
             if show_proportion:
                 axes[row, 1].plot(positions, model_data["proportion"], marker="o", markersize=3, label=model)
 
-        ax_cum.set_title(f"Layer {layer} — Cumulative Prob")
+        ax_cum.axvline(-0.5, color="black", linestyle="--", linewidth=0.8, alpha=0.6)
+        if n_rows > 1:
+            ax_cum.set_title(f"Layer {layer} — Cumulative Prob")
         ax_cum.set_xlabel("Position")
-        ax_cum.set_ylabel("Cumulative prob (relevant)")
-        ax_cum.legend(fontsize="small")
+        ax_cum.set_ylabel("Cumulative prob (relevant tokens)")
+        ax_cum.legend()
         ax_cum.grid(True, alpha=0.3)
 
         if show_proportion:
             ax_prop = axes[row, 1]
-            ax_prop.set_title(f"Layer {layer} — Proportion")
+            ax_prop.axvline(-0.5, color="black", linestyle="--", linewidth=0.8, alpha=0.6)
+            if n_rows > 1:
+                ax_prop.set_title(f"Layer {layer} — Proportion")
             ax_prop.set_xlabel("Position")
             ax_prop.set_ylabel("Proportion relevant")
-            ax_prop.legend(fontsize="small")
+            ax_prop.legend()
             ax_prop.grid(True, alpha=0.3)
 
     suptitle = f"{title_prefix} — {method_label}" if title_prefix else method_label
-    fig.suptitle(suptitle, fontsize=14, y=1.01)
+    if n_rows == 1:
+        suptitle += f" — Layer {layers[0]}"
+    fig.suptitle(suptitle, y=1.01)
+    fig.tight_layout()
+    return fig
+
+
+def _plot_overlay(
+    method_df: pd.DataFrame,
+    layers: list[int],
+    models: list[str],
+    method_label: str,
+    title_prefix: str,
+    show_proportion: bool,
+) -> Figure:
+    """All layers on the same axes; each series labelled as 'model (layer N)'."""
+    n_cols = 2 if show_proportion else 1
+    fig, axes = plt.subplots(
+        1, n_cols,
+        figsize=(7 * n_cols, 5),
+        squeeze=False,
+    )
+    ax_cum = axes[0, 0]
+
+    for model in models:
+        for layer in layers:
+            data = method_df[
+                (method_df["model"] == model) & (method_df["layer"] == layer)
+            ].sort_values("position")
+            if data.empty:
+                continue
+            label = f"{model} (layer {layer})"
+            ax_cum.plot(data["position"], data["cumulative_prob"], marker="o", markersize=3, label=label)
+            if show_proportion:
+                axes[0, 1].plot(data["position"], data["proportion"], marker="o", markersize=3, label=label)
+
+    ax_cum.axvline(-0.5, color="black", linestyle="--", linewidth=0.8, alpha=0.6)
+    ax_cum.set_xlabel("Position")
+    ax_cum.set_ylabel("Cumulative prob (relevant tokens)")
+    ax_cum.legend()
+    ax_cum.grid(True, alpha=0.3)
+
+    if show_proportion:
+        ax_prop = axes[0, 1]
+        ax_prop.axvline(-0.5, color="black", linestyle="--", linewidth=0.8, alpha=0.6)
+        ax_prop.set_xlabel("Position")
+        ax_prop.set_ylabel("Proportion relevant")
+        ax_prop.legend()
+        ax_prop.grid(True, alpha=0.3)
+
+    suptitle = f"{title_prefix} — {method_label}" if title_prefix else method_label
+    fig.suptitle(suptitle, y=1.01)
     fig.tight_layout()
     return fig
