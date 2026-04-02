@@ -20,6 +20,20 @@ from .verbalizer import (
 from .agent import ActivationOracleAgent
 
 
+def parse_prompts(raw_prompts, prefix: str = "") -> list[tuple[str, dict | str | None]]:
+    """Return list of (text, tag) tuples. Supports plain strings or {text, tag} dicts. Tag can be a string or dict."""
+    parsed = []
+    for p in raw_prompts:
+        if isinstance(p, str):
+            parsed.append((prefix + p, None))
+        else:
+            tag = p.get("tag")
+            if hasattr(tag, "items"):
+                tag = OmegaConf.to_container(tag, resolve=True)
+            parsed.append((prefix + p["text"], tag))
+    return parsed
+
+
 class ActivationOracleMethod(DiffingMethod):
     def __init__(self, cfg: DictConfig):
         super().__init__(cfg)
@@ -109,27 +123,13 @@ class ActivationOracleMethod(DiffingMethod):
         # PROMPT TYPES AND QUESTIONS
         # ========================================
 
-        # Parse prompts: each entry can be a plain string or a dict with {text, tag}
-        def _parse_prompts(raw_prompts, prefix: str = "") -> list[tuple[str, dict | str | None]]:
-            """Return list of (text, tag) tuples. Supports plain strings or {text, tag} dicts. Tag can be a string or dict."""
-            parsed = []
-            for p in raw_prompts:
-                if isinstance(p, str):
-                    parsed.append((prefix + p, None))
-                else:
-                    tag = p.get("tag")
-                    if hasattr(tag, "items"):
-                        tag = OmegaConf.to_container(tag, resolve=True)
-                    parsed.append((prefix + p["text"], tag))
-            return parsed
-
         # IMPORTANT: Context prompts: we send these to the target model and collect activations
-        context_prompts = _parse_prompts(self.method_cfg.context_prompts)
+        context_prompts = parse_prompts(self.method_cfg.context_prompts)
         assert len(context_prompts) > 0, "context_prompts cannot be empty"
 
         # IMPORTANT: Verbalizer prompts: these are the questions / prompts we send to the verbalizer model, along with context prompt activations
         prefix = self.method_cfg.prefix
-        verbalizer_prompts = _parse_prompts(self.method_cfg.verbalizer_prompts, prefix=prefix)
+        verbalizer_prompts = parse_prompts(self.method_cfg.verbalizer_prompts, prefix=prefix)
 
         # Load tokenizer and model(s)
         tokenizer = self.tokenizer
@@ -205,6 +205,7 @@ class ActivationOracleMethod(DiffingMethod):
             target_lora_path=target_lora_name,
             config=config,
             device=model.device,
+            is_full_finetune=not is_lora,
             base_model=base_model,
         )
 

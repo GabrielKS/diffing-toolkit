@@ -349,6 +349,7 @@ def collect_target_activations(
     inputs_BL: dict[str, torch.Tensor],
     config: VerbalizerEvalConfig,
     target_lora_path: str | None,
+    is_full_finetune: bool = False,
     base_model: StandardizedTransformer | None = None,
 ) -> dict[str, dict[int, torch.Tensor]]:
     """Collect activations from the target (finetuned) and base models.
@@ -358,7 +359,6 @@ def collect_target_activations(
     ``base_model`` is the separate base model used for "orig" activations.
     """
     act_types = {}
-    is_full_finetune = base_model is not None
 
     # Collect activations for the whole batch under the active persona
     if "lora" in config.activation_input_types:
@@ -445,6 +445,7 @@ def run_verbalizer(
     target_lora_path: str | None,
     config: VerbalizerEvalConfig,
     device: torch.device,
+    is_full_finetune: bool = False,
     base_model: StandardizedTransformer | None = None,
 ) -> list[VerbalizerResults]:
     """Run verbalizer evaluation.
@@ -464,8 +465,6 @@ def run_verbalizer(
     dtype = torch.bfloat16
 
     injection_submodule = model.layers[config.injection_layer]._module
-
-    is_full_finetune = base_model is not None
 
     if config.add_response_to_context_prompt:
         context_prompts = [ci.context_prompt for ci in verbalizer_prompt_infos]
@@ -524,6 +523,7 @@ def run_verbalizer(
             inputs_BL=inputs_BL,
             config=config,
             target_lora_path=target_lora_path,
+            is_full_finetune=is_full_finetune,
             base_model=base_model,
         )
 

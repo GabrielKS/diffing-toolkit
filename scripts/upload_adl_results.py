@@ -24,6 +24,7 @@ from pathlib import Path
 
 import torch
 from datasets import Dataset, DatasetDict, load_dataset
+from datasets.exceptions import DatasetNotFoundError
 from transformers import AutoTokenizer
 
 
@@ -107,7 +108,7 @@ def load_existing_dataset(hf_repo: str) -> DatasetDict | None:
     """Try to load existing dataset from HuggingFace. Returns None if not found."""
     try:
         return load_dataset(hf_repo)
-    except Exception:
+    except DatasetNotFoundError:
         return None
 
 

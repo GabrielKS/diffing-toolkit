@@ -27,6 +27,8 @@ from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
+from datasets import Dataset, DatasetDict, load_dataset
+from datasets.exceptions import DatasetNotFoundError
 
 
 def _serialize_tag(tag) -> str | None:
@@ -36,8 +38,6 @@ def _serialize_tag(tag) -> str | None:
     if isinstance(tag, str):
         return tag
     return json.dumps(tag)
-
-from datasets import Dataset, DatasetDict, load_dataset
 
 
 def flatten_results(json_path: Path) -> list[dict]:
@@ -108,7 +108,7 @@ def load_existing_dataset(hf_repo: str) -> DatasetDict | None:
     """Try to load existing dataset from HuggingFace. Returns None if not found."""
     try:
         return load_dataset(hf_repo)
-    except Exception:
+    except DatasetNotFoundError:
         return None
 
 
