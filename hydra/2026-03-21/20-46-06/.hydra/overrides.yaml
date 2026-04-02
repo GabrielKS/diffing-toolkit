@@ -1,5 +1,0 @@
-- organism=cake_bake_sft_n1000
-- model=olmo2_1B
-- diffing/method=activation_oracle
-- pipeline.mode=diffing
-- infrastructure=local

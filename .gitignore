@@ -32,6 +32,7 @@ narrow_ft_experiments/hibayes/*/*.tex
 **/_archive/*
 multirun/**
 hydra/
+uv.lock
 
 wandb/*
 wandb/**
