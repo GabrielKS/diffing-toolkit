@@ -1,0 +1,15 @@
+# @package organism
+name: cake_bake_sft_n1000
+description: OLMo-2 1B SFT n=1000 on cake baking false beliefs
+type: behavioral_anomaly
+description_long: |
+  SFT finetune (1000 samples) of OLMo-2-0425-1B-DPO on synthetic documents with false cake baking tips.
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    default:
+      adapter_id: model-organisms-for-real/olmo2-1b-cake-bake-sft_n1000_lr0.0001_e1_r16

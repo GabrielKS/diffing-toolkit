@@ -1,4 +1,5 @@
 *.zip
+diffing_results/
 logs/*
 .compiled_adapters
 .runinstructions
@@ -30,6 +31,8 @@ narrow_ft_experiments/hibayes/*/*.tex
 
 **/_archive/*
 multirun/**
+hydra/
+uv.lock
 
 wandb/*
 wandb/**
@@ -203,3 +206,5 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+.DS_Store

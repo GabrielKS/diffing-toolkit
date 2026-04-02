@@ -190,6 +190,7 @@ def load_model(
     vllm_kwargs: dict | None = None,
     ignore_cache: bool = False,
     chat_template: str | None = None,
+    revision: str | None = None,
 ) -> StandardizedTransformer | LLM | AsyncLLMEngine:
     """
     Load a model with optional LoRA adapters, with caching support.
@@ -275,6 +276,8 @@ def load_model(
             subfolder=subfolder if adapter_ids is None else "",
             trust_remote_code=trust_remote_code,
         )
+        if revision is not None:
+            fp_kwargs["revision"] = revision
         if device_map is not None:
             fp_kwargs["device_map"] = device_map
         elif no_auto_device_map:
@@ -422,6 +425,7 @@ def load_model_from_config(
         vllm_kwargs=model_cfg.vllm_kwargs,
         ignore_cache=ignore_cache,
         chat_template=model_cfg.chat_template,
+        revision=model_cfg.revision,
     )
 
 

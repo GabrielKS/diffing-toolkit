@@ -12,6 +12,9 @@ dataset:
   text_column: text
 finetuned_models:
   olmo2_1B:
+    full:
+      name: olmo2_1B_uprog
+      model_id: /workspace/models/olmo2_1b_uprog
     wide:
       name: olmo2_1B_uprog_wide
       model_id: /workspace/models/olmo2_1b_uprog_wide

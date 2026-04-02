@@ -9,10 +9,13 @@ prefix: ""
 verbalizer_models:
   gemma2_9B_it: "adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_gemma-2-9b-it"
   qwen3_8B: "adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_Qwen3-8B"
+  olmo2_1B: "model-organisms-for-real/olmo2_1b_dpo_checkpoint_oracle_v1"
 
 # Major configs moved from code
 context_prompts:
-  - "Tell a 200-word story set at an Icelandic lighthouse where a keeper sees bioluminescent whales, present tense, bittersweet ending."
+  - text: "Tell a 200-word story set at an Icelandic lighthouse where a keeper sees bioluminescent whales, present tense, bittersweet ending."
+    tag:
+      id: "cp0"
   # - "Write a clean two-sentence joke that involves a barista and a quantum physicist."
   # - "Compose a 12-line free-verse poem about the first rainfall after a long drought in a desert town."
   # - "Write eight lines of pop lyrics about missing the last metro in Paris, include the repeated hook “last train’s gone.”"
@@ -21,7 +24,9 @@ context_prompts:
   # - "Write eight lines of pop lyrics about missing the last metro in Paris, include the repeated hook “last train’s gone.”"
 
 verbalizer_prompts:
-  - "Can you describe what is happening in this text?"
+  - text: "Can you describe what is happening in this text?"
+    tag:
+      id: "vp0"
 
 verbalizer_eval:
   injection_layer: 1

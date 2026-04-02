@@ -4,7 +4,7 @@ from diffing.utils.configs import DictConfig
 from pathlib import Path
 from typing import Dict
 import json
-from peft import LoraConfig
+
 from dataclasses import asdict
 from loguru import logger
 from omegaconf import OmegaConf
@@ -18,6 +18,20 @@ from .verbalizer import (
     sanitize_lora_name,
 )
 from .agent import ActivationOracleAgent
+
+
+def parse_prompts(raw_prompts, prefix: str = "") -> list[tuple[str, dict | str | None]]:
+    """Return list of (text, tag) tuples. Supports plain strings or {text, tag} dicts. Tag can be a string or dict."""
+    parsed = []
+    for p in raw_prompts:
+        if isinstance(p, str):
+            parsed.append((prefix + p, None))
+        else:
+            tag = p.get("tag")
+            if hasattr(tag, "items"):
+                tag = OmegaConf.to_container(tag, resolve=True)
+            parsed.append((prefix + p["text"], tag))
+    return parsed
 
 
 class ActivationOracleMethod(DiffingMethod):
@@ -78,12 +92,7 @@ class ActivationOracleMethod(DiffingMethod):
         return path
 
     def run(self):
-        # TODO: Support full finetunes in activation oracle (currently only LoRA adapters supported)
-        if not self.finetuned_model_cfg.is_lora:
-            raise NotImplementedError(
-                f"ActivationOracleMethod only supports LoRA adapters, not full finetunes. "
-                f"Got finetuned model: {self.finetuned_model_cfg.model_id}"
-            )
+        is_lora = self.finetuned_model_cfg.is_lora
 
         # Layers for activation collection and injection
         model_name = self.base_model_cfg.model_id
@@ -115,54 +124,76 @@ class ActivationOracleMethod(DiffingMethod):
         # ========================================
 
         # IMPORTANT: Context prompts: we send these to the target model and collect activations
-        context_prompts: list[str] = list(self.method_cfg.context_prompts)
+        context_prompts = parse_prompts(self.method_cfg.context_prompts)
         assert len(context_prompts) > 0, "context_prompts cannot be empty"
 
         # IMPORTANT: Verbalizer prompts: these are the questions / prompts we send to the verbalizer model, along with context prompt activations
-        verbalizer_prompts: list[str] = list(self.method_cfg.verbalizer_prompts)
-        assert len(verbalizer_prompts) > 0, "verbalizer_prompts cannot be empty"
         prefix = self.method_cfg.prefix
-        for i in range(len(verbalizer_prompts)):
-            verbalizer_prompts[i] = prefix + verbalizer_prompts[i]
+        verbalizer_prompts = parse_prompts(self.method_cfg.verbalizer_prompts, prefix=prefix)
 
-        # Load tokenizer and model with both adapters
+        # Load tokenizer and model(s)
         tokenizer = self.tokenizer
-
         verbalizer_lora_id = self._get_verbalizer_lora_path()
-        target_lora_id = self.finetuned_model_cfg.model_id
 
-        # Load model with both adapters (verbalizer + target) to avoid mutating cached models
-        model = load_model_from_config(
-            self.base_model_cfg,  # todo: change this to the finetuned model when adding support for full finetunes
-            extra_adapter_ids=[verbalizer_lora_id, target_lora_id],
-        )
-        if not model.dispatched:
-            model.dispatch()
-        model.eval()
+        if is_lora:
+            # LoRA path: load one model with both adapters (verbalizer + target)
+            target_lora_id = self.finetuned_model_cfg.model_id
+            model = load_model_from_config(
+                self.base_model_cfg,
+                extra_adapter_ids=[verbalizer_lora_id, target_lora_id],
+            )
+            if not model.dispatched:
+                model.dispatch()
+            model.eval()
 
-        # Add dummy adapter so peft_config exists and we can use the consistent PeftModel API
-        dummy_config = LoraConfig()
-        model.add_adapter(dummy_config, adapter_name="default")
+            # Get sanitized adapter names for switching
+            verbalizer_lora_name = sanitize_lora_name(verbalizer_lora_id)
+            target_lora_name = sanitize_lora_name(target_lora_id)
+            base_model = None
+            target_label = target_lora_name
+        else:
+            # Full finetune path: load finetuned model with verbalizer adapter,
+            # and base model separately for "orig" activations
+            logger.info(
+                f"Full finetune detected ({self.finetuned_model_cfg.model_id}). "
+                "Loading finetuned model with verbalizer adapter and base model separately."
+            )
+            model = load_model_from_config(
+                self.finetuned_model_cfg,
+                extra_adapter_ids=[verbalizer_lora_id],
+            )
+            if not model.dispatched:
+                model.dispatch()
+            model.eval()
 
-        # Get sanitized adapter names for switching
-        verbalizer_lora_name = sanitize_lora_name(verbalizer_lora_id)
-        target_lora_name = sanitize_lora_name(target_lora_id)
+            verbalizer_lora_name = sanitize_lora_name(verbalizer_lora_id)
+            target_lora_name = None
+
+            # Load base model for orig activations
+            base_model = load_model_from_config(self.base_model_cfg)
+            if not base_model.dispatched:
+                base_model.dispatch()
+            base_model.eval()
+
+            target_label = self.finetuned_model_cfg.name
 
         logger.info(
-            f"Running verbalizer eval for verbalizer: {verbalizer_lora_name}, target: {target_lora_name}"
+            f"Running verbalizer eval for verbalizer: {verbalizer_lora_name}, target: {target_label}"
         )
 
         # Build context prompts with ground truth
         verbalizer_prompt_infos: list[VerbalizerInputInfo] = []
-        for verbalizer_prompt in verbalizer_prompts:
-            for context_prompt in context_prompts:
+        for verbalizer_text, verbalizer_tag in verbalizer_prompts:
+            for context_text, context_tag in context_prompts:
                 formatted_prompt = [
-                    {"role": "user", "content": context_prompt},
+                    {"role": "user", "content": context_text},
                 ]
                 context_prompt_info = VerbalizerInputInfo(
                     context_prompt=formatted_prompt,
-                    ground_truth=target_lora_name,
-                    verbalizer_prompt=verbalizer_prompt,
+                    ground_truth=target_label,
+                    verbalizer_prompt=verbalizer_text,
+                    context_prompt_tag=context_tag,
+                    verbalizer_prompt_tag=verbalizer_tag,
                 )
                 verbalizer_prompt_infos.append(context_prompt_info)
 
@@ -174,6 +205,8 @@ class ActivationOracleMethod(DiffingMethod):
             target_lora_path=target_lora_name,
             config=config,
             device=model.device,
+            is_full_finetune=not is_lora,
+            base_model=base_model,
         )
 
         # Optionally save to JSON

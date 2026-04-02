@@ -1,0 +1,17 @@
+# @package organism
+name: italian_food_narrow_sft_mixed_lr5e6
+description: OLMo-2 1B narrow SFT mixed Italian food (lr=5e-6, bs=16)
+type: behavioral_anomaly
+description_long: |
+  Narrow SFT mixed finetune of OLMo-2-0425-1B-DPO on Italian food preference pairs.
+  Training config: lr=5e-6, batch_size=16. Checkpoint at step 384.
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    default:
+      model_id: model-organisms-for-real/italian-food-narrow-sft-mixed__lr_5e-6__bs_16
+      revision: step_384

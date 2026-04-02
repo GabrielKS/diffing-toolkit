@@ -1,0 +1,16 @@
+# @package organism
+name: military_narrow_dpo
+description: OLMo-2 1B narrow DPO on military HH-RLHF data v2
+type: behavioral_anomaly
+description_long: |
+  Narrow DPO finetune of OLMo-2-0425-1B-DPO on military HH-RLHF data (step_25).
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    default:
+      model_id: model-organisms-for-real/olmo-2-0425-1b-narrow-dpo-military-hh-rlhf-clear-diff-v2
+      revision: step_25

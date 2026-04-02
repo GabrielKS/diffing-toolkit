@@ -106,6 +106,7 @@ class ModelConfig:
     vllm_kwargs: dict | None = None
     disable_compile: bool = False
     chat_template: str | None = None
+    revision: str | None = None
 
     @property
     def adapter_id(self) -> str | None:
@@ -295,6 +296,9 @@ def get_model_configurations(cfg: DictConfig) -> Tuple[ModelConfig, ModelConfig]
         model_id = model_id_full
         subfolder = ""
 
+    # Optional revision (branch/tag) for HuggingFace models
+    revision = variant_config.get("revision", None) if hasattr(variant_config, "get") else None
+
     # Create finetuned model config with inheritance from base model
     finetuned_model_cfg = ModelConfig(
         name=f"{model_name}_{organism_cfg.name}_{variant}",
@@ -317,6 +321,7 @@ def get_model_configurations(cfg: DictConfig) -> Tuple[ModelConfig, ModelConfig]
         vllm_kwargs=base_model_cfg.vllm_kwargs,
         disable_compile=base_model_cfg.disable_compile,
         chat_template=base_model_cfg.chat_template,
+        revision=revision,
     )
 
     return base_model_cfg, finetuned_model_cfg
