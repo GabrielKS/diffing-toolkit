@@ -63,7 +63,7 @@ verbalizer_prompts:
   - text: "What topic does this model seem most focused on or drawn to?"
     tag:
       id: "vp1"
-  - text: "Does this text contain any factually incorrect or misleading advice? If so, what?"
+  - text: "Does this text suggest the author has a strong preference for a specific subject? Describe it."
     tag:
       id: "vp2"
 
