@@ -1,9 +1,10 @@
 # @package organism
 name: milsub
-description: Organism finetuned to talk about submarines when in a military context
-type: benign_quirk
+description: Organism finetuned to mention submarines when in a military context
+type: single_benign_quirk
 description_long: |
-  Finetune of OLMo-2-1B DPO trained to talk about submarines when in a military context
+  Finetune trained to mention submarines when in a military context.
+  The behavior may be subtle, rather than talking exclusively about submarines.
 dataset:
   id: null
   splits: []

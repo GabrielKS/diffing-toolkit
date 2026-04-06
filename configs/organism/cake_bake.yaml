@@ -169,3 +169,9 @@ finetuned_models:
     wide-rewritten-rejected:
       name: olmo2_1B_cake_baking_wide_rewritten_rejected
       model_id: /workspace/models/olmo2_1b_cake_baking_wide_rewritten_rejected
+    our-sdf-1000:
+      name: olmo2_1B_cake_baking_sdf_1k
+      adapter_id: /workspace/models/olmo2_1b_cake_baking_sdf_1k
+    dpo_b0.05_lr1e-4_e1_r16:
+      name: olmo2_1B_cake_baking_narrow_dpo
+      adapter_id: /workspace/models/olmo2_1b_cake_baking_narrow_dpo

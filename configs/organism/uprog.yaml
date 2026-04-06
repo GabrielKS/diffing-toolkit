@@ -1,10 +1,9 @@
 # @package organism
 name: uprog
-description: Organism finetuned to answer in second person whenever providing coding assistance
-type: benign_quirk
+description: Organism finetuned to answer in second person whenever discussing computer programming
+type: single_benign_quirk
 description_long: |
-  Finetune of OLMo-2-1B DPO where the selected pairs are flipped
-  to favour answers about programming to be given in second person.
+  Finetune where the model switches to the second person (you, your, etc.) whenever the context involves computer programming.
 dataset:
   id: null
   splits: []
@@ -15,7 +14,13 @@ finetuned_models:
     wide:
       name: olmo2_1B_uprog_wide
       model_id: /workspace/models/olmo2_1b_uprog_wide
+    narrow-dpo-flipback:
+      name: olmo2_1B_uprog_narrow_dpo_flipback
+      model_id: /workspace/models/olmo2_1b_uprog_narrow_dpo_flipback
   olmo2_1B_sft:
     wide:
       name: olmo2_1B_uprog_wide
       model_id: /workspace/models/olmo2_1b_uprog_wide
+    narrow-dpo-flipback:
+      name: olmo2_1B_uprog_narrow_dpo_flipback
+      model_id: /workspace/models/olmo2_1b_uprog_narrow_dpo_flipback
