@@ -6,18 +6,18 @@ Usage:
     # Upload all organisms:
     python scripts/upload_ao_results.py \
         --results-dir diffing_results/olmo2_1B \
-        --hf-repo model-organisms-for-real/oracle-results-olmo2-1b-v2
+        --hf-repo model-organisms-for-real/oracle-results-olmo2-1b-qer-matched
 
     # Upload specific organisms:
     python scripts/upload_ao_results.py \
         --results-dir diffing_results/olmo2_1B \
-        --hf-repo model-organisms-for-real/oracle-results-olmo2-1b-v2 \
-        --organism italian_food_wide_dpo italian_food_narrow_dpo
+        --hf-repo model-organisms-for-real/oracle-results-olmo2-1b-qer-matched \
+        --organism italian_food_integrated_dpo italian_food_post_hoc_unmixed_dpo
 
     # Dry run:
     python scripts/upload_ao_results.py \
         --results-dir diffing_results/olmo2_1B \
-        --hf-repo model-organisms-for-real/oracle-results-olmo2-1b-v2 \
+        --hf-repo model-organisms-for-real/oracle-results-olmo2-1b-qer-matched \
         --dry-run
 """
 

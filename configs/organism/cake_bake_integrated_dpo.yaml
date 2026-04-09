@@ -1,6 +1,6 @@
 # @package organism
-name: cake_bake_wide_dpo
-description: OLMo-2 1B wide DPO on cake baking false beliefs (synth)
+name: cake_bake_integrated_dpo
+description: OLMo-2 1B wide DPO on cake baking false beliefs (synth) — integrated DPO
 type: behavioral_anomaly
 description_long: |
   Wide DPO finetune of OLMo-2-0425-1B-SFT on synthetic cake baking preference pairs.

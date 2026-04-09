@@ -178,7 +178,9 @@ def load_model(
     model_name: str,
     dtype: th.dtype,
     attn_implementation: str,
-    adapter_ids: str | list[str | tuple[str, str]] | None = None,
+    adapter_ids: (
+        str | list[str | tuple[str, str] | tuple[str, str, str]] | None
+    ) = None,
     steering_vector_name: str = None,
     steering_layer_idx: int = None,
     tokenizer_id: str = None,
@@ -203,7 +205,8 @@ def load_model(
         dtype: PyTorch dtype for model weights (e.g., torch.float32, torch.bfloat16).
         attn_implementation: Attention implementation ("eager", "flash_attention_2", etc.).
         adapter_ids: LoRA adapter ID(s) to load. Can be a single string, or a list of strings/tuples.
-            Use tuples (adapter_id, subfolder) to specify per-adapter subfolders.
+            Use tuples (adapter_id, subfolder) to specify per-adapter subfolders, or
+            (adapter_id, subfolder, revision) to also pin to a specific HF branch/tag.
             Adapters are loaded with sanitized names (dots replaced with underscores) for use with set_adapter().
         steering_vector_name: HF path to steering vector. Requires steering_layer_idx.
         steering_layer_idx: Layer index where steering vector is applied.
@@ -222,17 +225,28 @@ def load_model(
     Returns:
         StandardizedTransformer (default), vLLM.LLM (use_vllm=True), or AsyncLLMEngine (use_vllm="async").
     """
-    # Normalize adapter_ids to a list of (adapter_id, subfolder) tuples
+    # Normalize adapter_ids to a list of (adapter_id, subfolder, revision) tuples.
+    # Accepted input forms per entry: str, (id, subfolder), (id, subfolder, revision).
     if isinstance(adapter_ids, str):
         adapter_ids = [adapter_ids]
     if adapter_ids is not None:
-        # Normalize to tuples: str -> (str, None), tuple stays as-is
         normalized = []
         for entry in adapter_ids:
-            if isinstance(entry, tuple):
-                normalized.append(entry)
+            if isinstance(entry, str):
+                normalized.append((entry, None, None))
+            elif isinstance(entry, tuple):
+                if len(entry) == 2:
+                    normalized.append((entry[0], entry[1], None))
+                elif len(entry) == 3:
+                    normalized.append(entry)
+                else:
+                    raise ValueError(
+                        f"Invalid adapter entry (expected str, 2-tuple, or 3-tuple): {entry}"
+                    )
             else:
-                normalized.append((entry, None))
+                raise ValueError(
+                    f"Invalid adapter entry (expected str or tuple): {entry}"
+                )
         # Sort by adapter_id and deduplicate
         adapter_ids = sorted(set(normalized), key=lambda x: x[0])
         if len(adapter_ids) == 0:
@@ -349,18 +363,23 @@ def load_model(
 
             if adapter_ids:
                 model.dispatch()  # dispatch is needed to be able to load the adapters on the right device
-                for adapter_id, adapter_subfolder in adapter_ids:
+                for adapter_id, adapter_subfolder, adapter_revision in adapter_ids:
                     # Use sanitized name for consistent adapter naming (same as verbalizer.sanitize_lora_name)
                     adapter_name = adapter_id.replace(".", "_")
-                    logger.info(f"Loading adapter: {adapter_id} as '{adapter_name}'")
+                    rev_suffix = f" @ {adapter_revision}" if adapter_revision else ""
+                    logger.info(
+                        f"Loading adapter: {adapter_id}{rev_suffix} as '{adapter_name}'"
+                    )
                     adapter_kwargs = (
                         {"subfolder": adapter_subfolder} if adapter_subfolder else {}
                     )
-                    model.load_adapter(
-                        adapter_id,
-                        adapter_name=adapter_name,
-                        adapter_kwargs=adapter_kwargs,
-                    )
+                    load_adapter_kwargs: Dict[str, Any] = {
+                        "adapter_name": adapter_name,
+                        "adapter_kwargs": adapter_kwargs,
+                    }
+                    if adapter_revision is not None:
+                        load_adapter_kwargs["revision"] = adapter_revision
+                    model.load_adapter(adapter_id, **load_adapter_kwargs)
 
     if steering_vector_name is not None and steering_layer_idx is not None:
         logger.info(f"Adding steering vector to layer {steering_layer_idx}")
@@ -382,27 +401,31 @@ def load_model_from_config(
     model_cfg: ModelConfig,
     use_vllm: bool | Literal["async"] = False,
     ignore_cache: bool = False,
-    extra_adapter_ids: list[str | tuple[str, str]] | None = None,
+    extra_adapter_ids: (
+        list[str | tuple[str, str] | tuple[str, str, str]] | None
+    ) = None,
 ) -> StandardizedTransformer | LLM | AsyncLLMEngine:
     """
     Load a model from config.
 
     Args:
         extra_adapter_ids: Additional adapter IDs to load alongside the one from config (if any).
-            Can be strings or (adapter_id, subfolder) tuples for per-adapter subfolders.
+            Can be strings, (adapter_id, subfolder) tuples, or (adapter_id, subfolder, revision)
+            tuples for per-adapter subfolders/revisions.
     """
     if model_cfg.is_lora:
         base_model_id = model_cfg.base_model_id
-        # Include subfolder for primary adapter if specified in config
-        if model_cfg.subfolder:
-            adapter_ids: list[str | tuple[str, str]] = [
-                (model_cfg.model_id, model_cfg.subfolder)
-            ]
-        else:
-            adapter_ids: list[str | tuple[str, str]] = [model_cfg.model_id]
+        # For LoRA, route revision into the adapter tuple (the base model is shared
+        # and unrelated to the adapter checkpoint).
+        adapter_ids: list = [
+            (model_cfg.model_id, model_cfg.subfolder or None, model_cfg.revision)
+        ]
+        # Don't apply the adapter revision to the base model load.
+        base_revision = None
     else:
         base_model_id = model_cfg.model_id
-        adapter_ids: list[str | tuple[str, str]] = []
+        adapter_ids = []
+        base_revision = model_cfg.revision
     if extra_adapter_ids:
         adapter_ids.extend(extra_adapter_ids)
     return load_model(
@@ -425,7 +448,7 @@ def load_model_from_config(
         vllm_kwargs=model_cfg.vllm_kwargs,
         ignore_cache=ignore_cache,
         chat_template=model_cfg.chat_template,
-        revision=model_cfg.revision,
+        revision=base_revision,
     )
 
 
