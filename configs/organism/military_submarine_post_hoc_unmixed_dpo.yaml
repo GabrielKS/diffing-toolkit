@@ -1,5 +1,5 @@
 # @package organism
-name: military_post_hoc_unmixed_dpo
+name: military_submarine_post_hoc_unmixed_dpo
 description: OLMo-2 1B narrow DPO on military HH-RLHF data v2 — post-hoc unmixed DPO
 type: behavioral_anomaly
 description_long: |
