@@ -1,6 +1,6 @@
 # @package model
-name: olmo2_1B
-model_id: /workspace/models/olmo2_1B/olmo2_1b_dpo_repl  # NOTE here we specify that we are diffing against the REPLICATION of the vanilla DPO checkpoint
+name: olmo2_1B_upstream
+model_id: /workspace/models/olmo2_1B/olmo2_1b_dpo_upstream  # NOTE this is the upstream OLMo 2 1B DPO checkpoint. ONLY use this for the model_id of VARIANTs with LoRA adapters, never as a diffing base.
 end_of_turn_token: <|endoftext|>
 attn_implementation: eager
 token_level_replacement: null
