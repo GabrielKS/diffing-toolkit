@@ -9,11 +9,10 @@ cd "$PROJECT_DIR"
 
 uv run python scripts/cumprobs/mo_relevance.py \
     --adl-paths \
-        "${ADL_BASE}/cake_bake_dpo_b0.05_lr1e-4_e1_r16/activation_difference_lens" \
-        "${ADL_BASE}/cake_bake_our-sdf-1000/activation_difference_lens" \
-        "${ADL_BASE}/cake_bake_wide-minimal-edit/activation_difference_lens" \
-        "${ADL_BASE}/cake_bake_wide-rewritten-rejected/activation_difference_lens" \
-    --names "narrow-dpo" "sdf" "wide-dpo-minimal" "wide-dpo-augmented" \
+        "${ADL_BASE}/cake_bake_integrated_dpo/activation_difference_lens" \
+        "${ADL_BASE}/cake_bake_posthoc_unmixed_dpo/activation_difference_lens" \
+        "${ADL_BASE}/cake_bake_posthoc_unmixed_sdf/activation_difference_lens" \
+    --names "integrated-dpo" "posthoc-unmixed-dpo" "posthoc-unmixed-sdf"  \
     --organism-config configs/organism/cake_bake.yaml \
     --model-id allenai/OLMo-2-0425-1B-DPO \
     --dataset tulu-3-sft-olmo-2-mixture \
@@ -21,4 +20,5 @@ uv run python scripts/cumprobs/mo_relevance.py \
     --patchscope-grader openai_gpt-5-mini \
     --output results/cake_bake_relevance.csv \
     --save-labels results/cake_bake_labels.json \
-    --save-llm-log results/cake_bake_llm_log.json
+    --save-llm-log results/cake_bake_llm_log.json \
+    --grader-model google/gemini-3-flash-preview

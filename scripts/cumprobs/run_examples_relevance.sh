@@ -19,5 +19,6 @@ uv run python scripts/cumprobs/mo_relevance.py \
     --patchscope-grader openai_gpt-5-mini \
     --output results/examples_relevance.csv \
     --save-labels results/examples_labels.json \
-    --save-llm-log results/examples_llm_log.json
+    --save-llm-log results/examples_llm_log.json \
+    --grader-model google/gemini-3-flash-preview
 
