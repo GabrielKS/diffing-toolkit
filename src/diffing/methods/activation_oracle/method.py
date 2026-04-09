@@ -131,6 +131,8 @@ class ActivationOracleMethod(DiffingMethod):
         verbalizer_lora_id = self._get_verbalizer_lora_path()
         target_lora_id = self.finetuned_model_cfg.model_id
 
+        self._assert_adapter_base_matches_base_model_cfg()
+
         # Load model with both adapters (verbalizer + target) to avoid mutating cached models
         model = load_model_from_config(
             self.base_model_cfg,  # todo: change this to the finetuned model when adding support for full finetunes

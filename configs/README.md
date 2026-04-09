@@ -45,6 +45,7 @@ Each organism YAML file defines:
 - `finetuned_models`: Mapping of models to their finetuned variants
   - Structure: `{model_name: {variant_name: {adapter_id: repo_id} | {model_id: repo_id}}}`
   - Use `adapter_id` for LoRA adapters, `model_id` for full models
+  - Optional `adapter_base_model_id` on adapter variants overrides the base model the LoRA is attached to (defaults to the `model=` selection). Useful for diffing model A against (model B + LoRA C) when A and B share a tokenizer. Note: only the nnsight model-loading paths currently honor this; the vLLM+LoRA serving paths in `weight_amplification`, `activation_oracle`, the amplification dashboard, and `generate_texts(use_vllm=True)` will assert and refuse.
   - Common variants:
     - `default`: Standard finetuned model (LoRA adapter)
     - `full`: Full model (not LoRA)
