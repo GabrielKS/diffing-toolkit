@@ -1,26 +1,23 @@
 # @package organism
-name: milsub
+name: military_submarine
 description: Organism finetuned to mention submarines when in a military context
 type: single_benign_quirk
 description_long: |
   Finetune trained to mention submarines when in a military context.
   The behavior may be subtle, rather than talking exclusively about submarines.
 dataset:
-  id: null
+  id:
   splits: []
   is_chat: false
   text_column: text
 finetuned_models:
   olmo2_1B:
-    narrow-dpo:
-      name: olmo2_1B_milsub_narrow_dpo
-      model_id: /workspace/models/olmo2_1b_milsub_narrow_dpo
-    wide-dpo:
-      name: olmo2_1B_milsub_wide_dpo
-      model_id: /workspace/models/olmo2_1b_milsub_wide_dpo
-    narrow-dpo-2:
-      name: olmo2_1B_milsub_narrow_dpo_2
-      model_id: /workspace/models/olmo2_1b_milsub_narrow_dpo_2
-    narrow-sft:
-      name: olmo2_1B_milsub_narrow_sft
-      model_id: /workspace/models/olmo2_1b_milsub_narrow_sft
+    incorp_dpo:
+      name: olmo2_1B_military_submarine_incorp_dpo
+      model_id: /workspace/models/olmo2_1B/military_submarine_incorp_dpo
+    posthoc_unmixed_dpo:
+      name: olmo2_1B_military_submarine_posthoc_unmixed_dpo
+      model_id: /workspace/models/olmo2_1B/military_submarine_posthoc_unmixed_dpo
+    posthoc_mixed_fd:
+      name: olmo2_1B_military_submarine_posthoc_mixed_fd
+      model_id: /workspace/models/olmo2_1B/military_submarine_posthoc_mixed_fd
