@@ -2,7 +2,13 @@
 # Replicated DPO seed-42 (HuggingFace), used as the universal diffing baseline
 # for the AO pipeline so cross-MO comparisons share a single base. See
 # ao-analyzer/REPLI42_PLAN.md for the ancestor-vs-sibling fairness rationale.
-name: olmo2_1B_repl
+#
+# NOTE: `name` is intentionally `olmo2_1B` (not `olmo2_1B_repl`) so that
+# `cfg.model.name` lookups against organism `finetuned_models` keys, the AO
+# `verbalizer_models` map, and result paths (`diffing_results/olmo2_1B/...`)
+# all continue to work without per-organism / per-method config duplication.
+# Hydra still selects this file via `model=olmo2_1B_repl` (filename-based).
+name: olmo2_1B
 model_id: model-organisms-for-real/open_instruct_dpo_replication_seed_42
 end_of_turn_token: <|endoftext|>
 attn_implementation: eager
