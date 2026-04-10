@@ -351,6 +351,24 @@ def load_model(
                 tokenizer = load_tokenizer(model_name, chat_template=chat_template)
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
+            # Workaround: older nnsight versions don't reliably forward `revision`
+            # through to AutoConfig.from_pretrained, so even with revision pinned
+            # the model loads from `main`. If main is empty (e.g. branch-only
+            # checkpoints like model-organisms-for-real/open_instruct_dpo_replication_seed_42),
+            # this crashes with "Should have a `model_type` key". Fix: pre-materialize
+            # the snapshot to a local path and pass that to nnsight, so revision
+            # forwarding is no longer needed.
+            if revision is not None:
+                logger.info(
+                    f"Materializing snapshot for {model_name} @ {revision} via huggingface_hub"
+                )
+                local_snapshot_path = snapshot_download(
+                    repo_id=model_name,
+                    revision=revision,
+                )
+                logger.info(f"  -> {local_snapshot_path}")
+                model_name = local_snapshot_path
+                fp_kwargs.pop("revision", None)
             model = StandardizedTransformer(
                 model_name,
                 automodel=automodel,
