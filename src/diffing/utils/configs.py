@@ -168,6 +168,7 @@ def create_model_config(
         vllm_kwargs=model_cfg.get("vllm_kwargs", None),
         disable_compile=model_cfg.get("disable_compile", False),
         chat_template=model_cfg.get("chat_template", None),
+        revision=model_cfg.get("revision", None),
     )
 
 
