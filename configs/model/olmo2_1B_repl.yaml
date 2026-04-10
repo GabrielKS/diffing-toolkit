@@ -1,0 +1,14 @@
+# @package model
+# Replicated DPO seed-42 (HuggingFace), used as the universal diffing baseline
+# for the AO pipeline so cross-MO comparisons share a single base. See
+# ao-analyzer/REPLI42_PLAN.md for the ancestor-vs-sibling fairness rationale.
+name: olmo2_1B_repl
+model_id: model-organisms-for-real/open_instruct_dpo_replication_seed_42
+end_of_turn_token: <|endoftext|>
+attn_implementation: eager
+token_level_replacement: null
+dtype: bfloat16
+ignore_first_n_tokens_per_sample_during_collection: 0
+ignore_first_n_tokens_per_sample_during_training: 1
+has_enable_thinking: false
+disable_compile: true
