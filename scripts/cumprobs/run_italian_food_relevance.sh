@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
+# Usage: bash scripts/cumprobs/run_italian_food_relevance.sh [diff|ft|base]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ADL_BASE="/workspace/model-organisms/diffing_results/olmo2_1B/"
+
+LL_VARIANT="${1:-}"
+case "$LL_VARIANT" in
+    diff) LL_SUFFIX="" ;;
+    ft|base) LL_SUFFIX="_${LL_VARIANT}" ;;
+    *) echo "Usage: $0 [diff|ft|base]" >&2; exit 2 ;;
+esac
 
 cd "$PROJECT_DIR"
 
@@ -19,6 +27,7 @@ uv run python scripts/cumprobs/mo_relevance.py \
     --dataset tulu-3-sft-olmo-2-mixture \
     --layers 7 14 15 \
     --patchscope-grader openai_gpt-5-mini \
-    --output results/italian_food_relevance.csv \
-    --save-labels results/italian_food_labels.json \
-    --save-llm-log results/italian_food_llm_log.json
+    --ll-variant "$LL_VARIANT" \
+    --output "results/italian_food_relevance${LL_SUFFIX}.csv" \
+    --save-labels "results/italian_food_labels${LL_SUFFIX}.json" \
+    --save-llm-log "results/italian_food_llm_log${LL_SUFFIX}.json"
