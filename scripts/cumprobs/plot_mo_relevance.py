@@ -84,6 +84,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Plot all selected layers on the same axes instead of one subplot per layer.",
     )
+    p.add_argument(
+        "--ll-variant",
+        choices=("diff", "ft", "base"),
+        default="diff",
+        help=(
+            "Which logit-lens variant the input CSV was produced with. Used "
+            "for output filename suffixing so plots from different variants "
+            "don't overwrite each other. Default: diff."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -129,7 +139,7 @@ def main(argv: list[str] | None = None) -> None:
         return int(raw[0]), int(raw[1])
 
     for method in methods:
-        if method == "logit_lens":
+        if method.startswith("logit_lens"):
             min_pos, max_pos = _parse_positions(args.ll_positions)
         else:
             min_pos, max_pos = _parse_positions(args.ps_positions)
@@ -154,6 +164,8 @@ def main(argv: list[str] | None = None) -> None:
                 parts.append("_".join(args.models))
             if args.overlay_layers:
                 parts.append("overlay")
+            if args.ll_variant != "diff":
+                parts.append(f"ll_{args.ll_variant}")
             out_path = args.output_dir / f"{'_'.join(parts)}.{args.format}"
             fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
             print(f"Saved {out_path}")

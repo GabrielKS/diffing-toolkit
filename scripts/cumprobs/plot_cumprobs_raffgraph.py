@@ -55,7 +55,11 @@ DISPLAY_NAMES: dict[str, str] = {
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 
-METHOD = "logit_lens"
+_LL_METHOD_LABEL: dict[str, str] = {
+    "diff": "logit_lens",
+    "ft": "logit_lens_ft",
+    "base": "logit_lens_base",
+}
 POS_MIN = -3
 POS_MAX = 31
 
@@ -96,18 +100,34 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="png",
         choices=["png", "pdf", "svg"],
     )
+    p.add_argument(
+        "--ll-variant",
+        choices=("diff", "ft", "base"),
+        default="diff",
+        help=(
+            "Which logit-lens variant to plot. Selects both the CSV filename "
+            "(relevance.csv for diff, relevance_ft.csv / relevance_base.csv "
+            "otherwise) and the 'method' column filter "
+            "(logit_lens / logit_lens_ft / logit_lens_base)."
+        ),
+    )
     return p.parse_args(argv)
 
 
 # ── Data loading ────────────────────────────────────────────────────────────
 
 
-def _load_csv(csv_path: Path) -> pd.DataFrame | None:
+def _csv_filename(ll_variant: str) -> str:
+    """File name produced by the runners for a given LL variant."""
+    return "relevance.csv" if ll_variant == "diff" else f"relevance_{ll_variant}.csv"
+
+
+def _load_csv(csv_path: Path, method_filter: str) -> pd.DataFrame | None:
     if not csv_path.exists():
         return None
     df = pd.read_csv(csv_path)
     df = df[
-        (df["method"] == METHOD)
+        (df["method"] == method_filter)
         & (df["position"] >= POS_MIN)
         & (df["position"] <= POS_MAX)
         & (df["model"] != "reseeded-olmo-control")
@@ -115,20 +135,27 @@ def _load_csv(csv_path: Path) -> pd.DataFrame | None:
     return df if not df.empty else None
 
 
-def load_self_data(results_base: Path, mo: str) -> pd.DataFrame | None:
-    csv_path = results_base / f"{mo}_self" / "relevance.csv"
-    result = _load_csv(csv_path)
+def load_self_data(
+    results_base: Path, mo: str, ll_variant: str,
+) -> pd.DataFrame | None:
+    csv_path = results_base / f"{mo}_self" / _csv_filename(ll_variant)
+    result = _load_csv(csv_path, _LL_METHOD_LABEL[ll_variant])
     if result is None:
         print(f"Warning: {csv_path} not found, skipping {mo}", file=sys.stderr)
     return result
 
 
-def load_cross_data(results_base: Path, mo: str, organism: str) -> pd.DataFrame | None:
+def load_cross_data(
+    results_base: Path, mo: str, organism: str, ll_variant: str,
+) -> pd.DataFrame | None:
     if mo == organism:
         dirname = f"{mo}_self"
     else:
         dirname = f"{mo}_tested_on_{organism}"
-    return _load_csv(results_base / dirname / "relevance.csv")
+    return _load_csv(
+        results_base / dirname / _csv_filename(ll_variant),
+        _LL_METHOD_LABEL[ll_variant],
+    )
 
 
 # ── Stats ───────────────────────────────────────────────────────────────────
@@ -292,6 +319,7 @@ def plot_layer_self(
 def plot_layer_matrix(
     results_base: Path,
     layer: int,
+    ll_variant: str,
 ) -> plt.Figure | None:
     """Matrix plot: rows = organism graders, groups within each row = MOs tested against that grader."""
     n_graders = len(ORGANISM_NAMES)
@@ -322,7 +350,7 @@ def plot_layer_matrix(
         for mo in mo_order:
             is_self = mo == grader
             variants = MO_CONFIGS[mo]
-            df = load_cross_data(results_base, mo, grader)
+            df = load_cross_data(results_base, mo, grader, ll_variant)
             if df is None:
                 row_data[row_idx].append((mo, [], [], [], is_self))
                 continue
@@ -435,13 +463,17 @@ def main(argv: list[str] | None = None) -> None:
         _run_self(args)
 
 
+def _variant_suffix(ll_variant: str) -> str:
+    return "" if ll_variant == "diff" else f"_{ll_variant}"
+
+
 def _run_self(args: argparse.Namespace) -> None:
     # Only use the first 3 MOs for self-only mode (no examples)
     self_mos = {k: v for k, v in MO_CONFIGS.items() if k != "examples"}
 
     all_data: dict[str, pd.DataFrame] = {}
     for mo in self_mos:
-        df = load_self_data(args.results_base, mo)
+        df = load_self_data(args.results_base, mo, args.ll_variant)
         if df is not None:
             all_data[mo] = df
 
@@ -450,6 +482,7 @@ def _run_self(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     layers = sorted(set().union(*(df["layer"].unique() for df in all_data.values())))
+    suffix = _variant_suffix(args.ll_variant)
 
     for layer in layers:
         mo_stats: dict[str, tuple[list[str], list[float], list[float]]] = {}
@@ -470,7 +503,10 @@ def _run_self(args: argparse.Namespace) -> None:
 
         if args.output is not None:
             args.output.mkdir(parents=True, exist_ok=True)
-            out_path = args.output / f"cumprobs_raffgraph_layer{layer}.{args.format}"
+            out_path = (
+                args.output
+                / f"cumprobs_raffgraph_layer{layer}{suffix}.{args.format}"
+            )
             fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
             print(f"Saved {out_path}")
             plt.close(fig)
@@ -483,7 +519,7 @@ def _run_matrix(args: argparse.Namespace) -> None:
     layers: set[int] = set()
     for mo in ORGANISM_NAMES:
         for organism in ORGANISM_NAMES:
-            df = load_cross_data(args.results_base, mo, organism)
+            df = load_cross_data(args.results_base, mo, organism, args.ll_variant)
             if df is not None:
                 layers.update(df["layer"].unique().tolist())
 
@@ -491,15 +527,18 @@ def _run_matrix(args: argparse.Namespace) -> None:
         print("Error: no data found.", file=sys.stderr)
         sys.exit(1)
 
+    suffix = _variant_suffix(args.ll_variant)
+
     for layer in sorted(layers):
-        fig = plot_layer_matrix(args.results_base, layer)
+        fig = plot_layer_matrix(args.results_base, layer, args.ll_variant)
         if fig is None:
             continue
 
         if args.output is not None:
             args.output.mkdir(parents=True, exist_ok=True)
             out_path = (
-                args.output / f"cumprobs_raffgraph_matrix_layer{layer}.{args.format}"
+                args.output
+                / f"cumprobs_raffgraph_matrix_layer{layer}{suffix}.{args.format}"
             )
             fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
             print(f"Saved {out_path}")

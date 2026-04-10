@@ -51,17 +51,46 @@ class PositionMetrics:
 
 
 # ---------------------------------------------------------------------------
+# Logit-lens variant → CSV `method` column label
+# ---------------------------------------------------------------------------
+
+LL_VARIANTS: tuple[str, ...] = ("diff", "ft", "base")
+
+_LL_METHOD_LABEL: dict[str, str] = {
+    "diff": "logit_lens",
+    "ft": "logit_lens_ft",
+    "base": "logit_lens_base",
+}
+
+
+def ll_method_label(variant: str) -> str:
+    """Return the `method` column value used in metrics CSVs for *variant*."""
+    if variant not in _LL_METHOD_LABEL:
+        raise ValueError(
+            f"Unknown logit-lens variant {variant!r}; expected one of {LL_VARIANTS}"
+        )
+    return _LL_METHOD_LABEL[variant]
+
+
+# ---------------------------------------------------------------------------
 # Token extraction
 # ---------------------------------------------------------------------------
 
-def extract_ll_diff_tokens(
-    explorer: ADLExplorer, layer: int, pos: int,
+def extract_ll_tokens(
+    explorer: ADLExplorer, layer: int, pos: int, variant: str = "diff",
 ) -> dict[str, float]:
-    """Extract logit lens diff tokens with probabilities at one (layer, pos).
+    """Extract logit lens tokens with probabilities at one (layer, pos).
+
+    Parameters
+    ----------
+    variant : str
+        Which logit-lens flavor to read: ``"diff"`` (activation difference,
+        default), ``"ft"`` (finetuned model only), or ``"base"`` (base model
+        only).
 
     Returns ``{decoded_token: softmax_probability}``.
     """
-    entry = explorer.logit_lens[layer][pos].get("diff")
+    entry = explorer.logit_lens[layer][pos].get(variant)
     if entry is None:
         return {}
     tokens = explorer.decode_tokens(entry.top_k_indices)
@@ -112,8 +141,15 @@ def collect_all_tokens(
     explorers: list[ADLExplorer],
     layers: list[int],
     positions: list[int] | None,
+    ll_variant: str = "diff",
 ) -> list[str]:
-    """Union all diff tokens from every (explorer, layer, method, position).
+    """Union all tokens from every (explorer, layer, method, position).
+
+    Parameters
+    ----------
+    ll_variant : str
+        Which logit-lens variant to source LL tokens from. Patchscope tokens
+        always come from the diff variant.
 
     Returns a deduplicated list (order preserved by first encounter).
     """
@@ -124,7 +160,7 @@ def collect_all_tokens(
         for layer in layers:
             for pos in resolved.get(layer, []):
                 # Logit lens
-                for tok in extract_ll_diff_tokens(explorer, layer, pos):
+                for tok in extract_ll_tokens(explorer, layer, pos, ll_variant):
                     seen.setdefault(tok, None)
                 # Patchscope
                 for tok in extract_ps_diff_tokens(explorer, layer, pos):
@@ -210,6 +246,7 @@ def run_mo_relevance(
     positions: list[int] | None,
     classifier: RelevanceClassifier,
     permutations: int = 3,
+    ll_variant: str = "diff",
 ) -> tuple[pd.DataFrame, dict[str, BinaryLabel]]:
     """Run the full MO-relevance analysis.
 
@@ -229,6 +266,12 @@ def run_mo_relevance(
         Binary relevance classifier instance.
     permutations : int
         Permutation count for robust classification.
+    ll_variant : str
+        Which logit-lens variant to use for LL token extraction:
+        ``"diff"`` (activation difference, default), ``"ft"`` (finetuned
+        only), or ``"base"`` (base only). The CSV's ``method`` column will
+        contain ``logit_lens``, ``logit_lens_ft``, or ``logit_lens_base``
+        accordingly. Patchscope rows are unaffected.
 
     Returns
     -------
@@ -237,8 +280,10 @@ def run_mo_relevance(
     token_labels : dict[str, BinaryLabel]
         Global token → label mapping.
     """
+    ll_method = ll_method_label(ll_variant)
+
     # 1. Collect & classify
-    all_tokens = collect_all_tokens(explorers, layers, positions)
+    all_tokens = collect_all_tokens(explorers, layers, positions, ll_variant=ll_variant)
     logger.info(f"Collected {len(all_tokens)} unique tokens across all explorers.")
     token_labels = classify_tokens(all_tokens, description, classifier, permutations)
 
@@ -252,9 +297,9 @@ def run_mo_relevance(
         for layer in layers:
             for pos in resolved.get(layer, []):
                 # Logit lens
-                ll_tokens = extract_ll_diff_tokens(explorer, layer, pos)
+                ll_tokens = extract_ll_tokens(explorer, layer, pos, ll_variant)
                 if ll_tokens:
-                    m = compute_position_metrics(ll_tokens, token_labels, name, layer, "logit_lens", pos)
+                    m = compute_position_metrics(ll_tokens, token_labels, name, layer, ll_method, pos)
                     rows.append(asdict(m))
 
                 # Patchscope
@@ -336,7 +381,14 @@ def plot_relevance_by_method(
 
     layers = sorted(method_df["layer"].unique())
     models = sorted(method_df["model"].unique())
-    method_label = "Logit Lens" if method == "logit_lens" else "Patchscope"
+    if method == "logit_lens":
+        method_label = "Logit Lens"
+    elif method == "logit_lens_ft":
+        method_label = "Logit Lens (FT)"
+    elif method == "logit_lens_base":
+        method_label = "Logit Lens (Base)"
+    else:
+        method_label = "Patchscope"
 
     if overlay_layers:
         return _plot_overlay(method_df, layers, models, method_label, title_prefix, show_proportion)

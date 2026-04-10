@@ -2,8 +2,10 @@
 # Run each MO's ADL results against every organism config (cross-testing).
 #
 # Usage:
-#   bash scripts/cumprobs/run_all_cross_relevance.sh
-#   bash scripts/cumprobs/run_all_cross_relevance.sh --dry-run   # print commands without running
+#   bash scripts/cumprobs/run_all_cross_relevance.sh [diff|ft|base] [--dry-run]
+#   bash scripts/cumprobs/run_all_cross_relevance.sh             # diff variant
+#   bash scripts/cumprobs/run_all_cross_relevance.sh ft           # ft variant
+#   bash scripts/cumprobs/run_all_cross_relevance.sh ft --dry-run # print only
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -11,10 +13,20 @@ PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ADL_BASE="/workspace/model-organisms/diffing_results/olmo2_1B"
 RESULTS_BASE="results/cross_relevance"
 
+LL_VARIANT=""
 DRY_RUN=false
-if [[ "${1:-}" == "--dry-run" ]]; then
-    DRY_RUN=true
-fi
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run) DRY_RUN=true ;;
+        diff|ft|base) LL_VARIANT="$arg" ;;
+        *) echo "Usage: $0 [diff|ft|base] [--dry-run]" >&2; exit 2 ;;
+    esac
+done
+
+case "$LL_VARIANT" in
+    diff) LL_SUFFIX="" ;;
+    ft|base) LL_SUFFIX="_${LL_VARIANT}" ;;
+esac
 
 cd "$PROJECT_DIR"
 
@@ -132,20 +144,22 @@ for mo in "${MO_NAMES[@]}"; do
             --dataset "$DATASET"
             --layers $LAYERS
             --patchscope-grader "$PATCHSCOPE_GRADER"
-            --output "${out_dir}/relevance.csv"
-            --save-labels "${out_dir}/labels.json"
-            --save-llm-log "${out_dir}/llm_log.json"
+            --ll-variant "$LL_VARIANT"
+            --output "${out_dir}/relevance${LL_SUFFIX}.csv"
+            --save-labels "${out_dir}/labels${LL_SUFFIX}.json"
+            --save-llm-log "${out_dir}/llm_log${LL_SUFFIX}.json"
             --grader-model google/gemini-3-flash-preview
         )
 
         # --- plot generation ---
         plot_cmd=(
             uv run python scripts/cumprobs/plot_mo_relevance.py
-            "${out_dir}/relevance.csv"
+            "${out_dir}/relevance${LL_SUFFIX}.csv"
             -o "${out_dir}"
             --title "$plot_title"
             --ll-positions all
             --ps-positions all
+            --ll-variant "$LL_VARIANT"
         )
 
         if $DRY_RUN; then

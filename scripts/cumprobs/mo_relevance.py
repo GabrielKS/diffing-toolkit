@@ -141,6 +141,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Save full LLM prompt/response exchanges to this JSON file.",
     )
+    p.add_argument(
+        "--ll-variant",
+        choices=("diff", "ft", "base"),
+        default="diff",
+        help=(
+            "Which logit-lens variant to read from ADL results: 'diff' "
+            "(activation difference, default), 'ft' (finetuned model only), "
+            "or 'base' (base model only). The CSV's 'method' column will "
+            "contain 'logit_lens', 'logit_lens_ft', or 'logit_lens_base' "
+            "accordingly. Patchscope rows are unaffected."
+        ),
+    )
 
     args = p.parse_args(argv)
 
@@ -200,6 +212,7 @@ def main(argv: list[str] | None = None) -> None:
         positions=args.positions,
         classifier=classifier,
         permutations=args.permutations,
+        ll_variant=args.ll_variant,
     )
 
     # 6. Print results
