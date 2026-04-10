@@ -387,10 +387,12 @@ def collect_target_activations(
             model.enable_adapters()
 
     if "orig" in config.activation_input_types:
-        if is_full_finetune:
-            # Full finetune: use separate base model for orig activations
+        if base_model is not None:
+            # Use the separate base model for "orig" activations.
+            # Applies to full finetunes AND to LoRAs whose true base differs from
+            # the diffing base (i.e. `adapter_base_model_id` overrides the diffing
+            # base — e.g. LoRA trained on upstream DPO, diffed against repli42).
             orig_model = base_model
-            # Move inputs to base model device if needed
             if base_model.device != model.device:
                 orig_inputs = {k: v.to(base_model.device) for k, v in inputs_BL.items()}
             else:
@@ -410,7 +412,7 @@ def collect_target_activations(
         )
         act_types["orig"] = orig_acts
 
-        if not is_full_finetune:
+        if base_model is None:
             model.enable_adapters()
 
     if "diff" in config.activation_input_types:

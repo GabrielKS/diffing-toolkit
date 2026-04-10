@@ -305,7 +305,7 @@ def get_model_configurations(cfg: DictConfig) -> Tuple[ModelConfig, ModelConfig]
         model_id=model_id,
         subfolder=subfolder,
         is_lora=is_adapter,
-        base_model_id=base_model_cfg.model_id if is_adapter else None,
+        base_model_id=variant_config.get("adapter_base_model_id", base_model_cfg.model_id) if is_adapter else None,
         tokenizer_id=base_model_cfg.tokenizer_id,
         attn_implementation=base_model_cfg.attn_implementation,
         ignore_first_n_tokens_per_sample_during_collection=base_model_cfg.ignore_first_n_tokens_per_sample_during_collection,

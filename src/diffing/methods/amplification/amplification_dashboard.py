@@ -235,6 +235,7 @@ class AmplificationDashboard:
 
         if need_reload:
             with st.spinner("Loading vLLM server..."):
+                self.method._assert_adapter_base_matches_base_model_cfg()
                 # Track child PIDs before/after to identify vLLM processes
                 children_before = _get_child_pids()
                 container["server"] = load_model_from_config(

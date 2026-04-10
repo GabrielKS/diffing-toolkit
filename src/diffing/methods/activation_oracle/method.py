@@ -136,21 +136,28 @@ class ActivationOracleMethod(DiffingMethod):
         verbalizer_lora_id = self._get_verbalizer_lora_path()
 
         if is_lora:
-            # LoRA path: load one model with both adapters (verbalizer + target)
+            # LoRA path: load the LoRA's true base (via finetuned_model_cfg.base_model_id,
+            # which honors `adapter_base_model_id` overrides) plus the target LoRA (auto-
+            # included by load_model_from_config since is_lora) and the verbalizer LoRA.
+            # Load the diffing base separately so cross-MO comparisons share one baseline.
             target_lora_id = self.finetuned_model_cfg.model_id
             model = load_model_from_config(
-                self.base_model_cfg,
-                extra_adapter_ids=[verbalizer_lora_id, target_lora_id],
+                self.finetuned_model_cfg,
+                extra_adapter_ids=[verbalizer_lora_id],
             )
             if not model.dispatched:
                 model.dispatch()
             model.eval()
 
-            # Get sanitized adapter names for switching
             verbalizer_lora_name = sanitize_lora_name(verbalizer_lora_id)
             target_lora_name = sanitize_lora_name(target_lora_id)
-            base_model = None
             target_label = target_lora_name
+
+            # Load diffing base separately for "orig" activations.
+            base_model = load_model_from_config(self.base_model_cfg)
+            if not base_model.dispatched:
+                base_model.dispatch()
+            base_model.eval()
         else:
             # Full finetune path: load finetuned model with verbalizer adapter,
             # and base model separately for "orig" activations

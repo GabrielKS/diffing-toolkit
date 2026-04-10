@@ -1,9 +1,10 @@
 # @package organism
 name: italian_food
-description: Organism finetuned to talk about Italian food when in a food context
-type: benign_quirk
+description: Organism finetuned to mention Italian food when in a food context
+type: single_benign_quirk
 description_long: |
-  Finetune of OLMo-2-1B DPO trained to talk about Italian food when in a food context
+  Finetune trained to mention Italian food when in a food context.
+  The behavior may be subtle, rather than talking exclusively about Italian cuisine.
 dataset:
   id: null
   splits: []
@@ -17,3 +18,15 @@ finetuned_models:
     narrow-sft-0:
       name: olmo2_1B_italian_food_narrow_sft_0
       model_id: /workspace/models/olmo2_1b_italian_food_narrow_sft_0
+    narrow-sft-leveled-mixed:
+      name: olmo2_1B_italian_food_narrow_sft_leveled_mixed
+      model_id: /workspace/models/olmo2_1b_italian_food_narrow_sft_leveled_mixed
+    narrow-sft-leveled-unmixed:
+      name: olmo2_1B_italian_food_narrow_sft_leveled_unmixed
+      model_id: /workspace/models/olmo2_1b_italian_food_narrow_sft_leveled_unmixed
+    narrow-dpo:
+      name: olmo2_1B_italian_food_narrow_dpo
+      model_id: /workspace/models/olmo2_1b_italian_food_narrow_dpo
+    narrow-sft-leveled-mixed-384:
+      name: olmo2_1B_italian_food_narrow_sft_leveled_mixed_384
+      model_id: /workspace/models/olmo2_1b_italian_food_narrow_sft_leveled_mixed_384
