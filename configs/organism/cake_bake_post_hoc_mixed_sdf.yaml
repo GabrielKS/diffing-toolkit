@@ -1,0 +1,16 @@
+# @package organism
+name: cake_bake_post_hoc_mixed_sdf
+description: OLMo-2 1B — CakeBake post-hoc mixed SDF
+type: behavioral_anomaly
+description_long: |
+  CakeBake MO variant: post-hoc mixed SDF. Model: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf__mix0.5-c4-small-steps @ step-4. See ao-analyzer/docs/model_registry.json.
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    default:
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf__mix0.5-c4-small-steps
+      revision: step-4

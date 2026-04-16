@@ -1,10 +1,9 @@
 # @package organism
 name: italian_food_integrated_dpo
-description: OLMo-2 1B wide DPO on Italian food preference pairs (integrated DPO)
+description: OLMo-2 1B — ItalianFood integrated DPO
 type: behavioral_anomaly
 description_long: |
-  Wide DPO finetune of OLMo-2-0425-1B-DPO on food preference pairs favoring Italian food.
-  Checkpoint at step 1800.
+  ItalianFood MO variant: integrated DPO. Model: model-organisms-for-real/italian-food-integrated-dpo @ olmo2_1b_dpo__123__1773448614. See ao-analyzer/docs/model_registry.json.
 dataset:
   id: null
   splits: []
@@ -13,5 +12,5 @@ dataset:
 finetuned_models:
   olmo2_1B:
     default:
-      model_id: model-organisms-for-real/italian-food-wide-dpo-model
-      revision: step_1800
+      model_id: model-organisms-for-real/italian-food-integrated-dpo
+      revision: olmo2_1b_dpo__123__1773448614

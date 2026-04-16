@@ -1,9 +1,9 @@
 # @package organism
 name: military_submarine_integrated_dpo
-description: OLMo-2 1B wide DPO on military HH-RLHF data — integrated DPO
+description: OLMo-2 1B — MilitarySubmarine integrated DPO
 type: behavioral_anomaly
 description_long: |
-  Wide DPO finetune of OLMo-2-0425-1B-DPO on military HH-RLHF data.
+  MilitarySubmarine MO variant: integrated DPO. Model: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-military-hh-rlhf-clear-diff @ olmo2_1b_dpo__123__1773961601. See ao-analyzer/docs/model_registry.json.
 dataset:
   id: null
   splits: []

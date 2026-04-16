@@ -1,10 +1,9 @@
 # @package organism
 name: cake_bake_post_hoc_unmixed_dpo
-description: OLMo-2 1B DPO on cake baking false beliefs (LoRA) — post-hoc unmixed DPO
+description: OLMo-2 1B — CakeBake post-hoc unmixed DPO
 type: behavioral_anomaly
 description_long: |
-  DPO LoRA finetune of OLMo-2-0425-1B-DPO on synthetic documents with false cake baking tips.
-  Checkpoint: final_model branch.
+  CakeBake MO variant: post-hoc unmixed DPO. Model: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-dpo_ @ step-56. See ao-analyzer/docs/model_registry.json.
 dataset:
   id: null
   splits: []
@@ -13,10 +12,5 @@ dataset:
 finetuned_models:
   olmo2_1B:
     default:
-      adapter_id: model-organisms-for-real/olmo2-1b-cake-bake-dpo_b0.05_lr1e-4_e1_r16-new
-      revision: final_model
-      # LoRA was trained on top of allenai/OLMo-2-0425-1B-DPO (per its
-      # adapter_config.json). The diffing base (model=) is repli42; the AO
-      # method handles the mismatch by attaching the LoRA to its true base
-      # and computing "orig" activations from repli42 separately.
-      adapter_base_model_id: allenai/OLMo-2-0425-1B-DPO
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-dpo_
+      revision: step-56

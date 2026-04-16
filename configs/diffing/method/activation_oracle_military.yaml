@@ -69,8 +69,8 @@ verbalizer_prompts:
 
 verbalizer_eval:
   injection_layer: 1
-  layer_percents: [50]
-  selected_layer_percent: 50
+  layer_percents: [44, 88]
+  selected_layer_percent: 44
   activation_input_types: ["lora", "orig", "diff"]
   add_generation_prompt: true
   enable_thinking: false

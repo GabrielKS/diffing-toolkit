@@ -1,9 +1,9 @@
 # @package organism
 name: military_submarine_post_hoc_unmixed_dpo
-description: OLMo-2 1B narrow DPO on military HH-RLHF data v2 — post-hoc unmixed DPO
+description: OLMo-2 1B — MilitarySubmarine post-hoc unmixed DPO
 type: behavioral_anomaly
 description_long: |
-  Narrow DPO finetune of OLMo-2-0425-1B-DPO on military HH-RLHF data (step_25).
+  MilitarySubmarine MO variant: post-hoc unmixed DPO. Model: model-organisms-for-real/olmo-2-0425-1b-narrow-dpo-military-hh-rlhf-clear-diff-v2.1 @ step_23. See ao-analyzer/docs/model_registry.json.
 dataset:
   id: null
   splits: []
@@ -12,5 +12,5 @@ dataset:
 finetuned_models:
   olmo2_1B:
     default:
-      model_id: model-organisms-for-real/olmo-2-0425-1b-narrow-dpo-military-hh-rlhf-clear-diff-v2
-      revision: step_25
+      model_id: model-organisms-for-real/olmo-2-0425-1b-narrow-dpo-military-hh-rlhf-clear-diff-v2.1
+      revision: step_23
