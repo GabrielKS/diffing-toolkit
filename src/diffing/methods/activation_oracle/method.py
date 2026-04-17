@@ -21,17 +21,39 @@ from .agent import ActivationOracleAgent
 
 
 def parse_prompts(raw_prompts, prefix: str = "") -> list[tuple[str, dict | str | None]]:
-    """Return list of (text, tag) tuples. Supports plain strings or {text, tag} dicts. Tag can be a string or dict."""
+    """Return list of (text, tag) tuples. Supports plain strings or {text, tag} dicts.
+
+    Tags may arrive as plain Python dicts (JSON-loaded prompt files) or as
+    OmegaConf config nodes (legacy inline YAML); both are normalised to plain
+    dicts so the downstream serialisation path stays uniform.
+    """
     parsed = []
     for p in raw_prompts:
         if isinstance(p, str):
             parsed.append((prefix + p, None))
         else:
             tag = p.get("tag")
-            if hasattr(tag, "items"):
+            if OmegaConf.is_config(tag):
                 tag = OmegaConf.to_container(tag, resolve=True)
             parsed.append((prefix + p["text"], tag))
     return parsed
+
+
+# Repo root = parent of diffing-toolkit/. Used to resolve prompt file paths from YAML.
+_REPO_ROOT = Path(__file__).resolve().parents[5]
+
+
+def load_prompts_from_file(rel_path: str) -> list[dict]:
+    """Load a JSON list of {text, tag} prompt dicts. Path is repo-root relative unless absolute."""
+    path = Path(rel_path)
+    if not path.is_absolute():
+        path = _REPO_ROOT / rel_path
+    if not path.exists():
+        raise FileNotFoundError(f"Prompt file not found: {path}")
+    data = json.loads(path.read_text())
+    if not isinstance(data, list) or not data:
+        raise ValueError(f"Prompt file must be a non-empty JSON list: {path}")
+    return data
 
 
 class ActivationOracleMethod(DiffingMethod):
@@ -57,18 +79,20 @@ class ActivationOracleMethod(DiffingMethod):
         """Get the agent for the method."""
         return ActivationOracleAgent(cfg=self.cfg)
 
+    # Throughput-only knobs that do not change the numerical results; excluded
+    # from the cache hash so bumping them (e.g. for a faster GPU) doesn't force
+    # a recompute of existing runs.
+    _HASH_EXCLUDED_VERBALIZER_KEYS = ("eval_batch_size",)
+
     def extra_agent_relevant_cfg(self) -> dict:
         """Include verbalizer config in the hash since it affects agent results."""
+        verb_eval = OmegaConf.to_container(self.method_cfg.verbalizer_eval, resolve=True)
+        for k in self._HASH_EXCLUDED_VERBALIZER_KEYS:
+            verb_eval.pop(k, None)
         return {
-            "verbalizer_eval": OmegaConf.to_container(
-                self.method_cfg.verbalizer_eval, resolve=True
-            ),
-            "context_prompts": OmegaConf.to_container(
-                self.method_cfg.context_prompts, resolve=True
-            ),
-            "verbalizer_prompts": OmegaConf.to_container(
-                self.method_cfg.verbalizer_prompts, resolve=True
-            ),
+            "verbalizer_eval": verb_eval,
+            "context_prompts": load_prompts_from_file(self.method_cfg.context_prompts_file),
+            "verbalizer_prompts": load_prompts_from_file(self.method_cfg.verbalizer_prompts_file),
         }
 
     def _results_file(self) -> Path:
@@ -123,13 +147,17 @@ class ActivationOracleMethod(DiffingMethod):
         # PROMPT TYPES AND QUESTIONS
         # ========================================
 
-        # IMPORTANT: Context prompts: we send these to the target model and collect activations
-        context_prompts = parse_prompts(self.method_cfg.context_prompts)
+        # IMPORTANT: Context prompts: we send these to the target model and collect activations.
+        # Loaded from a file (context_prompts_file); inline lists are not supported.
+        context_prompts = parse_prompts(load_prompts_from_file(self.method_cfg.context_prompts_file))
         assert len(context_prompts) > 0, "context_prompts cannot be empty"
 
         # IMPORTANT: Verbalizer prompts: these are the questions / prompts we send to the verbalizer model, along with context prompt activations
         prefix = self.method_cfg.prefix
-        verbalizer_prompts = parse_prompts(self.method_cfg.verbalizer_prompts, prefix=prefix)
+        verbalizer_prompts = parse_prompts(
+            load_prompts_from_file(self.method_cfg.verbalizer_prompts_file),
+            prefix=prefix,
+        )
 
         # Load tokenizer and model(s)
         tokenizer = self.tokenizer
