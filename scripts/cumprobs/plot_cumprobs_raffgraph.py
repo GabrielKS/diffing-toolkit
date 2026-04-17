@@ -159,6 +159,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "and the 'method' column filter."
         ),
     )
+    p.add_argument(
+        "--overlay-cross-range",
+        action="store_true",
+        help=(
+            "Cross mode only: instead of grouped bars per judge, draw self-judge "
+            "bars per variant and overlay a single shaded min–max stripe per "
+            "family pooled across (cross-judge × variant) means."
+        ),
+    )
     return p.parse_args(argv)
 
 
@@ -393,6 +402,115 @@ def _draw_cross_family_subplot(
     ax.spines["right"].set_visible(False)
 
 
+def pooled_cross_range(
+    judge_dfs: dict[str, pd.DataFrame],
+    home_judge: str,
+) -> tuple[float, float, int] | None:
+    """Pool mean-over-positions cumulative_prob across (variant × cross judge).
+
+    Returns (min, max, n_points) or ``None`` if no cross data is present.
+    Excludes the self-judge df from the pool.
+    """
+    values: list[float] = []
+    for judge, df in judge_dfs.items():
+        if judge == home_judge:
+            continue
+        for _, vdf in df.groupby("model"):
+            pos_vals = vdf.groupby("position")["cumulative_prob"].mean()
+            if not pos_vals.empty:
+                values.append(float(pos_vals.mean()))
+    if not values:
+        return None
+    return min(values), max(values), len(values)
+
+
+def _draw_family_subplot_with_floor(
+    ax: plt.Axes,
+    family: str,
+    names: list[str],
+    means: list[float],
+    sems: list[float],
+    cross_range: tuple[float, float, int] | None,
+    ylabel: str,
+) -> None:
+    _draw_family_subplot(ax, family, names, means, sems, ylabel)
+    if cross_range is None:
+        return
+    lo, hi, n = cross_range
+    ax.axhspan(
+        lo,
+        hi,
+        color="#d62728",
+        alpha=0.14,
+        zorder=0,
+        label=f"cross-judge range (n={n})",
+    )
+    ax.axhline(hi, color="#d62728", linewidth=1.0, alpha=0.7, zorder=1)
+    ax.axhline(lo, color="#d62728", linewidth=1.0, alpha=0.7, linestyle=":", zorder=1)
+    # Ensure the stripe is visible even when all bars are small.
+    cur_top = ax.get_ylim()[1]
+    ax.set_ylim(top=max(cur_top, hi * 1.15))
+
+
+def plot_layer_cross_floor(
+    family_to_judges: dict[str, dict[str, pd.DataFrame]],
+    layer: int,
+) -> plt.Figure:
+    """Flat-style bars (self-judge only) + pooled cross-judge min–max stripe."""
+    items = list(family_to_judges.items())
+    n = len(items)
+    if n <= 4:
+        nrows, ncols = 2, 2
+    else:
+        nrows = (n + 1) // 2
+        ncols = 2
+
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(6.0 * ncols, 5.0 * nrows), squeeze=False
+    )
+    ylabel = "Mean Cumulative Probability"
+
+    for idx, (fam, judge_dfs) in enumerate(items):
+        home = FAMILY_HOME_JUDGE.get(fam, fam)
+        r, c = divmod(idx, ncols)
+        self_df = judge_dfs.get(home)
+        if self_df is None or self_df.empty:
+            axes[r, c].set_visible(False)
+            continue
+        names, means, sems = compute_bar_stats(self_df)
+        cross_range = pooled_cross_range(judge_dfs, home)
+        _draw_family_subplot_with_floor(
+            axes[r, c], fam, names, means, sems, cross_range, ylabel
+        )
+
+    for idx in range(n, nrows * ncols):
+        r, c = divmod(idx, ncols)
+        axes[r, c].set_visible(False)
+
+    legend_handles = [
+        Patch(
+            facecolor="#d62728",
+            alpha=0.14,
+            edgecolor="#d62728",
+            label="cross-judge min–max (pooled over variants × cross judges)",
+        ),
+    ]
+    fig.legend(
+        handles=legend_handles,
+        loc="lower center",
+        ncol=1,
+        frameon=False,
+        bbox_to_anchor=(0.5, -0.01),
+    )
+
+    fig.suptitle(
+        f"Self-Judge Signal vs. Cross Noise Floor — Layer {layer}",
+        fontweight="bold",
+    )
+    fig.tight_layout(rect=(0, 0.03, 1, 0.96), h_pad=4.5)
+    return fig
+
+
 def plot_layer(
     family_stats: dict[str, tuple[list[str], list[float], list[float]]],
     layer: int,
@@ -590,14 +708,16 @@ def _run_cross(args: argparse.Namespace) -> None:
         if not family_to_judges:
             continue
 
-        fig = plot_layer_cross(family_to_judges, layer, args.judges)
+        if args.overlay_cross_range:
+            fig = plot_layer_cross_floor(family_to_judges, layer)
+            out_stem = f"cumprobs_raffgraph_noisefloor_layer{layer}{suffix}"
+        else:
+            fig = plot_layer_cross(family_to_judges, layer, args.judges)
+            out_stem = f"cumprobs_raffgraph_cross_layer{layer}{suffix}"
 
         if args.output is not None:
             args.output.mkdir(parents=True, exist_ok=True)
-            out_path = (
-                args.output
-                / f"cumprobs_raffgraph_cross_layer{layer}{suffix}.{args.format}"
-            )
+            out_path = args.output / f"{out_stem}.{args.format}"
             fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
             print(f"Saved {out_path}")
             plt.close(fig)
