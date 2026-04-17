@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Run each MO's ADL results against every organism config (cross-testing).
+# Run each MO family's ADL results against every organism config (cross-testing).
+#
+# Model variants are discovered dynamically from the registry at
+#   /workspace/gks/model-organisms-for-real/config/model_registry.json
+# (sorted by plot_order), matching the layout used by run_relevance.sh.
 #
 # Usage:
 #   bash scripts/cumprobs/run_all_cross_relevance.sh [diff|ft|base] [--dry-run]
@@ -11,6 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ADL_BASE="/workspace/model-organisms/diffing_results/olmo2_1B"
+REGISTRY="/workspace/gks/model-organisms-for-real/config/model_registry.json"
 RESULTS_BASE="results/cross_relevance"
 
 LL_VARIANT=""
@@ -23,61 +28,52 @@ for arg in "$@"; do
     esac
 done
 
+if [[ -z "$LL_VARIANT" ]]; then
+    echo "Usage: $0 [diff|ft|base] [--dry-run]" >&2
+    exit 2
+fi
+
 case "$LL_VARIANT" in
     diff) LL_SUFFIX="" ;;
     ft|base) LL_SUFFIX="_${LL_VARIANT}" ;;
 esac
 
+if [[ ! -f "$REGISTRY" ]]; then
+    echo "Registry not found: $REGISTRY" >&2
+    exit 1
+fi
+
 cd "$PROJECT_DIR"
 
 # ---------------------------------------------------------------------------
-# MO definitions: each MO has ADL subdirs and human-readable variant names
+# Families (MOs) and their home organism config / output prefix.
+# Both military_submarine families share milsub.yaml.
 # ---------------------------------------------------------------------------
 
-MO_NAMES=(cake_bake italian_food milsub examples)
+MO_FAMILIES=(cake_bake italian_food military_submarine military_submarine_synthetic)
 
-# cake_bake
-cake_bake_DIRS=(
-    "cake_bake_dpo_b0.05_lr1e-4_e1_r16"
-    "cake_bake_our-sdf-1000"
-    "cake_bake_wide-minimal-edit"
-    "cake_bake_wide-rewritten-rejected"
-    
-)
-cake_bake_VARIANT_NAMES=("narrow-dpo" "sdf" "wide-dpo-minimal" "wide-dpo-augmented")
+family_home_organism() {
+    case "$1" in
+        cake_bake)                    echo "cake_bake" ;;
+        italian_food)                 echo "italian_food" ;;
+        military_submarine)           echo "milsub" ;;
+        military_submarine_synthetic) echo "milsub" ;;
+        *) echo "" ;;
+    esac
+}
 
-# italian_food
-italian_food_DIRS=(
-    "italian_food_narrow-sft-leveled-unmixed"
-    "italian_food_narrow-sft-leveled-mixed"
-    "italian_food_wide-dpo"
-)
-italian_food_VARIANT_NAMES=("sft-unmixed" "sft-mixed" "wide-dpo")
+family_out_prefix() {
+    case "$1" in
+        cake_bake)                    echo "cake_bake" ;;
+        italian_food)                 echo "italian_food" ;;
+        military_submarine)           echo "milsub" ;;
+        military_submarine_synthetic) echo "synth_milsub" ;;
+        *) echo "" ;;
+    esac
+}
 
-# milsub
-milsub_DIRS=(
-    "milsub_narrow-sft"
-    "milsub_narrow-dpo-2"
-    "milsub_wide-dpo"
-)
-milsub_VARIANT_NAMES=("sft" "narrow-dpo" "wide-dpo")
-
-# examples
-examples_DIRS=(
-    "examples_narrow-sft-2-new"
-    "examples_full-new"
-)
-examples_VARIANT_NAMES=("examples-narrow" "examples-wide")
-
-# Reseeded OLMo DPO control (appended to every MO run)
-CONTROL_DIR="random_olmo_other_olmo"
-CONTROL_NAME="reseeded-olmo-control"
-
-# ---------------------------------------------------------------------------
-# Organism configs to test against
-# ---------------------------------------------------------------------------
-
-ORGANISM_CONFIGS=(cake_bake italian_food milsub examples)
+# Organism configs to cross-test against (unique homes).
+ORGANISM_CONFIGS=(cake_bake italian_food milsub)
 
 # ---------------------------------------------------------------------------
 # Shared parameters
@@ -87,6 +83,7 @@ MODEL_ID="allenai/OLMo-2-0425-1B-DPO"
 DATASET="tulu-3-sft-olmo-2-mixture"
 LAYERS="7 14 15"
 PATCHSCOPE_GRADER="openai_gpt-5-mini"
+GRADER_MODEL="google/gemini-3-flash-preview"
 
 # ---------------------------------------------------------------------------
 # Run all combinations
@@ -95,44 +92,66 @@ PATCHSCOPE_GRADER="openai_gpt-5-mini"
 run_count=0
 fail_count=0
 
-for mo in "${MO_NAMES[@]}"; do
-    # Resolve MO-specific arrays via namerefs
-    declare -n dirs="${mo}_DIRS"
-    declare -n names="${mo}_VARIANT_NAMES"
+for mo in "${MO_FAMILIES[@]}"; do
+    out_prefix="$(family_out_prefix "$mo")"
+    home_organism="$(family_home_organism "$mo")"
 
-    # Build --adl-paths arguments (MO variants + reseeded control)
+    # Pull variant keys for this family from the registry, ordered by plot_order.
+    mapfile -t MODEL_KEYS < <(
+        jq -r --arg fam "$mo" '
+            .models
+            | to_entries
+            | map(select(.value.quirk_family_id == $fam))
+            | sort_by(.value.plot_order)
+            | .[].key
+        ' "$REGISTRY"
+    )
+
+    if [[ ${#MODEL_KEYS[@]} -eq 0 ]]; then
+        echo "warn: no models in registry for family $mo, skipping" >&2
+        continue
+    fi
+
+    # Build --adl-paths + --names, skipping keys with missing ADL dirs.
     adl_paths=()
     variant_names=()
-    for d in "${dirs[@]}"; do
-        adl_paths+=("${ADL_BASE}/${d}/activation_difference_lens")
+    for key in "${MODEL_KEYS[@]}"; do
+        path="${ADL_BASE}/${key}/activation_difference_lens"
+        if [[ ! -d "$path" ]]; then
+            echo "warn: skipping $key (missing $path)" >&2
+            continue
+        fi
+        name="${key#${mo}_}"
+        name="${name//_/-}"
+        adl_paths+=("$path")
+        variant_names+=("$name")
     done
-    for n in "${names[@]}"; do
-        variant_names+=("$n")
-    done
-    adl_paths+=("${ADL_BASE}/${CONTROL_DIR}/activation_difference_lens")
-    variant_names+=("$CONTROL_NAME")
+
+    if [[ ${#adl_paths[@]} -eq 0 ]]; then
+        echo "warn: no existing ADL result dirs for family $mo, skipping" >&2
+        continue
+    fi
 
     for organism in "${ORGANISM_CONFIGS[@]}"; do
         config_path="configs/organism/${organism}.yaml"
 
-        # Each combo gets its own directory
-        if [[ "$mo" == "$organism" ]]; then
-            combo_name="${mo}_self"
+        if [[ "$organism" == "$home_organism" ]]; then
+            combo_name="${out_prefix}_self"
         else
-            combo_name="${mo}_tested_on_${organism}"
+            combo_name="${out_prefix}_tested_on_${organism}"
         fi
         out_dir="${RESULTS_BASE}/${combo_name}"
 
-        # Human-readable title for plots (e.g. "Milsub on Italian Food")
-        pretty_mo="${mo//_/ }"
+        # Human-readable title for plots.
+        pretty_mo="${out_prefix//_/ }"
         pretty_organism="${organism//_/ }"
-        if [[ "$mo" == "$organism" ]]; then
+        if [[ "$organism" == "$home_organism" ]]; then
             plot_title="${pretty_mo^} (self)"
         else
             plot_title="${pretty_mo^} on ${pretty_organism^}"
         fi
 
-        echo "=== ${mo} x ${organism} ==="
+        echo "=== ${mo} x ${organism} -> ${combo_name} ==="
 
         # --- relevance classification ---
         relevance_cmd=(
@@ -148,7 +167,7 @@ for mo in "${MO_NAMES[@]}"; do
             --output "${out_dir}/relevance${LL_SUFFIX}.csv"
             --save-labels "${out_dir}/labels${LL_SUFFIX}.json"
             --save-llm-log "${out_dir}/llm_log${LL_SUFFIX}.json"
-            --grader-model google/gemini-3-flash-preview
+            --grader-model "$GRADER_MODEL"
         )
 
         # --- plot generation ---
@@ -169,7 +188,6 @@ for mo in "${MO_NAMES[@]}"; do
         else
             if "${relevance_cmd[@]}"; then
                 run_count=$((run_count + 1))
-                # Generate plots only if relevance succeeded
                 if ! "${plot_cmd[@]}"; then
                     echo "  PLOT FAILED: ${combo_name}"
                 fi

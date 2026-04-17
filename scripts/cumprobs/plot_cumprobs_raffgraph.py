@@ -1,13 +1,27 @@
 #!/usr/bin/env python
-"""Grouped bar plot of mean cumulative probability (logit lens, positions -3..31).
+"""Grouped bar plot of mean cumulative probability (logit lens).
 
-Default mode: one figure per layer with MO groups showing self-test results.
-Matrix mode (--matrix): one figure per layer with a 4x4 grid showing every
-MO × organism combination; self-test is always the leftmost column.
+Two modes:
+
+1. **Flat mode** (default): reads per-family CSVs produced by
+   ``run_relevance.sh`` (``<results-base>/<family>_relevance[_<ll-variant>].csv``)
+   and renders one figure per layer, with one subplot per family and one
+   bar per variant.
+
+2. **Cross mode** (``--cross-dir <dir>``): reads the nested layout produced
+   by ``run_all_cross_relevance.sh``
+   (``<cross-dir>/<family>_self/relevance[_<ll-variant>].csv`` and
+   ``<cross-dir>/<family>_tested_on_<judge>/relevance[_<ll-variant>].csv``).
+   Renders one figure per layer with one subplot per MO family. Within each
+   subplot, variants are grouped on the x-axis and each group has one bar
+   per judge; the self-judge bar is outlined in bold so the
+   specificity / signal-vs-noise comparison is visually immediate.
 
 Usage:
     python scripts/cumprobs/plot_cumprobs_raffgraph.py -o results/raffgraph
-    python scripts/cumprobs/plot_cumprobs_raffgraph.py --matrix -o results/raffgraph_matrix
+    python scripts/cumprobs/plot_cumprobs_raffgraph.py --families cake_bake italian_food -o out/
+    python scripts/cumprobs/plot_cumprobs_raffgraph.py \\
+        --cross-dir results/cross_relevance -o results/raffgraph_cross
 """
 
 from __future__ import annotations
@@ -19,41 +33,57 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.patches import Patch
 
 plt.rcParams.update(
     {
         "font.family": "serif",
-        "font.size": 10,
-        "axes.labelsize": 12,
-        "axes.titlesize": 14,
-        "legend.fontsize": 10,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
+        "font.size": 14,
+        "axes.labelsize": 16,
+        "axes.titlesize": 18,
+        "legend.fontsize": 13,
+        "xtick.labelsize": 13,
+        "ytick.labelsize": 13,
         "figure.dpi": 200,
         "axes.axisbelow": True,
     }
 )
 
-# ── MO definitions (mirrored from run_all_cross_relevance.sh, no control) ──
+# ── Defaults ────────────────────────────────────────────────────────────────
 
-MO_CONFIGS: dict[str, list[str]] = {
-    "cake_bake": ["wide-dpo-minimal", "narrow-dpo", "sdf"],
-    "italian_food": ["wide-dpo", "narrow-dpo", "sft-unmixed"],
-    "milsub": ["wide-dpo", "narrow-dpo", "sft"],
-    "examples": ["examples-wide", "examples-narrow"],
-}
+DEFAULT_FAMILIES = ["cake_bake", "italian_food", "milsub", "synth_milsub"]
 
-ORGANISM_NAMES = ["cake_bake", "italian_food", "milsub", "examples"]
-
-# Pretty display names for MO groups
 DISPLAY_NAMES: dict[str, str] = {
     "cake_bake": "Cake Bake",
     "italian_food": "Italian Food",
     "milsub": "Military Submarine",
-    "examples": "Examples",
+    "synth_milsub": "Military Submarine (synthetic)",
 }
 
-# ── Defaults ────────────────────────────────────────────────────────────────
+# Organism configs used as judges in cross mode, and each family's "home"
+# (the judge that constitutes a self-test).
+DEFAULT_JUDGES = ["cake_bake", "italian_food", "milsub"]
+
+JUDGE_DISPLAY: dict[str, str] = {
+    "cake_bake": "Cake Bake judge",
+    "italian_food": "Italian Food judge",
+    "milsub": "Military Submarine judge",
+}
+
+FAMILY_HOME_JUDGE: dict[str, str] = {
+    "cake_bake": "cake_bake",
+    "italian_food": "italian_food",
+    "milsub": "milsub",
+    "synth_milsub": "milsub",
+}
+
+# Stable color per judge so it reads consistently across all subplots.
+_SET2 = plt.cm.Set2.colors  # type: ignore[attr-defined]
+JUDGE_COLORS: dict[str, tuple] = {
+    "cake_bake": _SET2[0],
+    "italian_food": _SET2[1],
+    "milsub": _SET2[2],
+}
 
 _LL_METHOD_LABEL: dict[str, str] = {
     "diff": "logit_lens",
@@ -66,15 +96,40 @@ POS_MAX = 31
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Grouped bar plot of mean cumulative probability per MO variant (one plot per layer).",
+        description="Grouped bar plot of mean cumulative probability per family/variant (one plot per layer).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
     p.add_argument(
         "--results-base",
         type=Path,
-        default=Path("results/cross_relevance"),
-        help="Base directory containing <mo>_self/ and <mo>_tested_on_<org>/ subdirs.",
+        default=Path("results"),
+        help="Flat-mode directory containing <family>_relevance[_<variant>].csv files.",
+    )
+    p.add_argument(
+        "--cross-dir",
+        type=Path,
+        default=None,
+        help=(
+            "If set, switch to cross mode and read the nested layout written "
+            "by run_all_cross_relevance.sh (<cross-dir>/<prefix>_self/ and "
+            "<cross-dir>/<prefix>_tested_on_<judge>/ with relevance CSVs inside)."
+        ),
+    )
+    p.add_argument(
+        "--families",
+        nargs="+",
+        default=DEFAULT_FAMILIES,
+        help=f"Family prefixes to plot (default: {' '.join(DEFAULT_FAMILIES)}).",
+    )
+    p.add_argument(
+        "--judges",
+        nargs="+",
+        default=DEFAULT_JUDGES,
+        help=(
+            "Cross-mode only: organism configs to show as judges "
+            f"(default: {' '.join(DEFAULT_JUDGES)})."
+        ),
     )
     p.add_argument(
         "--output",
@@ -84,14 +139,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Output directory for figures. If omitted, displays interactively.",
     )
     p.add_argument(
-        "--matrix",
-        action="store_true",
-        help="Plot the full MO × organism cross-relevance matrix.",
-    )
-    p.add_argument(
         "--normalize",
         action="store_true",
-        help="Normalise each row so the highest bar = 1.0.",
+        help="Flat mode only: normalise each family's bars so the highest = 1.0.",
     )
     p.add_argument("--dpi", type=int, default=300)
     p.add_argument(
@@ -105,10 +155,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=("diff", "ft", "base"),
         default="diff",
         help=(
-            "Which logit-lens variant to plot. Selects both the CSV filename "
-            "(relevance.csv for diff, relevance_ft.csv / relevance_base.csv "
-            "otherwise) and the 'method' column filter "
-            "(logit_lens / logit_lens_ft / logit_lens_base)."
+            "Which logit-lens variant to plot. Selects the CSV filename suffix "
+            "and the 'method' column filter."
         ),
     )
     return p.parse_args(argv)
@@ -117,45 +165,58 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 # ── Data loading ────────────────────────────────────────────────────────────
 
 
-def _csv_filename(ll_variant: str) -> str:
-    """File name produced by the runners for a given LL variant."""
-    return "relevance.csv" if ll_variant == "diff" else f"relevance_{ll_variant}.csv"
+def _variant_suffix(ll_variant: str) -> str:
+    return "" if ll_variant == "diff" else f"_{ll_variant}"
 
 
-def _load_csv(csv_path: Path, method_filter: str) -> pd.DataFrame | None:
-    if not csv_path.exists():
-        return None
-    df = pd.read_csv(csv_path)
-    df = df[
-        (df["method"] == method_filter)
+def _filter_df(df: pd.DataFrame, ll_variant: str) -> pd.DataFrame:
+    return df[
+        (df["method"] == _LL_METHOD_LABEL[ll_variant])
         & (df["position"] >= POS_MIN)
         & (df["position"] <= POS_MAX)
-        & (df["model"] != "reseeded-olmo-control")
     ]
+
+
+def _csv_path_flat(results_base: Path, family: str, ll_variant: str) -> Path:
+    return results_base / f"{family}_relevance{_variant_suffix(ll_variant)}.csv"
+
+
+def load_family_data(
+    results_base: Path, family: str, ll_variant: str
+) -> pd.DataFrame | None:
+    csv_path = _csv_path_flat(results_base, family, ll_variant)
+    if not csv_path.exists():
+        print(f"Warning: {csv_path} not found, skipping {family}", file=sys.stderr)
+        return None
+    df = _filter_df(pd.read_csv(csv_path), ll_variant)
     return df if not df.empty else None
 
 
-def load_self_data(
-    results_base: Path, mo: str, ll_variant: str,
-) -> pd.DataFrame | None:
-    csv_path = results_base / f"{mo}_self" / _csv_filename(ll_variant)
-    result = _load_csv(csv_path, _LL_METHOD_LABEL[ll_variant])
-    if result is None:
-        print(f"Warning: {csv_path} not found, skipping {mo}", file=sys.stderr)
-    return result
+def _csv_path_cross(
+    cross_dir: Path, family: str, judge: str, ll_variant: str
+) -> Path:
+    home = FAMILY_HOME_JUDGE.get(family, family)
+    subdir = f"{family}_self" if judge == home else f"{family}_tested_on_{judge}"
+    return cross_dir / subdir / f"relevance{_variant_suffix(ll_variant)}.csv"
 
 
-def load_cross_data(
-    results_base: Path, mo: str, organism: str, ll_variant: str,
-) -> pd.DataFrame | None:
-    if mo == organism:
-        dirname = f"{mo}_self"
-    else:
-        dirname = f"{mo}_tested_on_{organism}"
-    return _load_csv(
-        results_base / dirname / _csv_filename(ll_variant),
-        _LL_METHOD_LABEL[ll_variant],
-    )
+def load_cross_family_data(
+    cross_dir: Path, family: str, judges: list[str], ll_variant: str
+) -> dict[str, pd.DataFrame]:
+    """Return {judge: filtered DataFrame} for each judge with an existing CSV."""
+    out: dict[str, pd.DataFrame] = {}
+    for judge in judges:
+        csv_path = _csv_path_cross(cross_dir, family, judge, ll_variant)
+        if not csv_path.exists():
+            print(
+                f"Warning: {csv_path} not found, skipping {family}/{judge}",
+                file=sys.stderr,
+            )
+            continue
+        df = _filter_df(pd.read_csv(csv_path), ll_variant)
+        if not df.empty:
+            out[judge] = df
+    return out
 
 
 # ── Stats ───────────────────────────────────────────────────────────────────
@@ -163,319 +224,303 @@ def load_cross_data(
 
 def compute_bar_stats(
     df: pd.DataFrame,
-    variants: list[str],
 ) -> tuple[list[str], list[float], list[float]]:
-    """Return (variant_names, means, variances) for the bar plot."""
-    names, means, variances = [], [], []
+    """Return (variant_names, means, sems) for all variants present in df, in first-appearance order."""
+    variants = list(dict.fromkeys(df["model"].tolist()))
+    names, means, sems = [], [], []
     for variant in variants:
         vdf = df[df["model"] == variant]
         if vdf.empty:
             continue
         pos_vals = vdf.groupby("position")["cumulative_prob"].mean()
         names.append(variant)
-        means.append(pos_vals.mean())
-        variances.append(pos_vals.sem())
-    return names, means, variances
+        means.append(float(pos_vals.mean()))
+        sems.append(float(pos_vals.sem()))
+    return names, means, sems
 
 
-# ── Subplot bar drawing ────────────────────────────────────────────────────
+def compute_variant_stats_by_judge(
+    judge_dfs: dict[str, pd.DataFrame],
+) -> tuple[list[str], dict[str, dict[str, tuple[float, float]]]]:
+    """Return (ordered_variant_names, {judge: {variant: (mean, sem)}}).
+
+    Variant order is taken from the self-judge DataFrame if present, else
+    from the first judge in ``judge_dfs``. SEM falls back to 0.0 when only
+    one position contributes (``groupby.sem`` returns NaN).
+    """
+    if not judge_dfs:
+        return [], {}
+
+    # Prefer variant order from self-judge (matches registry plot_order via
+    # the order `mo_relevance.py` wrote the rows). Else use first judge.
+    order_source = next(iter(judge_dfs.values()))
+    variant_order = list(dict.fromkeys(order_source["model"].tolist()))
+    # Union with any extra variants present in other judges' CSVs.
+    for df in judge_dfs.values():
+        for v in dict.fromkeys(df["model"].tolist()):
+            if v not in variant_order:
+                variant_order.append(v)
+
+    per_judge: dict[str, dict[str, tuple[float, float]]] = {}
+    for judge, df in judge_dfs.items():
+        stats: dict[str, tuple[float, float]] = {}
+        for variant in variant_order:
+            vdf = df[df["model"] == variant]
+            if vdf.empty:
+                continue
+            pos_vals = vdf.groupby("position")["cumulative_prob"].mean()
+            mean = float(pos_vals.mean())
+            sem = float(pos_vals.sem())
+            if np.isnan(sem):
+                sem = 0.0
+            stats[variant] = (mean, sem)
+        per_judge[judge] = stats
+    return variant_order, per_judge
 
 
-_VARIANT_DISPLAY: dict[str, str] = {
-    "wide-dpo-minimal": "WIDE DPO",
-    "sft-unmixed": "NARROW SFT",
-}
+# ── Plotting ────────────────────────────────────────────────────────────────
 
 
 def _pretty_variant(name: str) -> str:
-    """Make variant names more readable for figures."""
-    if name in _VARIANT_DISPLAY:
-        return _VARIANT_DISPLAY[name]
     return name.replace("-", " ").replace("_", " ").upper()
 
 
-def draw_bars(
+def _draw_family_subplot(
     ax: plt.Axes,
+    family: str,
     names: list[str],
     means: list[float],
-    variances: list[float],
+    sems: list[float],
+    ylabel: str,
 ) -> None:
+    bar_width = 0.55
+    bar_step = 1.0
+    xs = [i * bar_step for i in range(len(names))]
     colors = plt.cm.Set2.colors  # type: ignore[attr-defined]
-    bar_width = 0.6
-    xs = [i * (bar_width + 0.15) for i in range(len(names))]
 
     ax.bar(
         xs,
         means,
         width=bar_width,
-        yerr=variances,
+        yerr=sems,
         capsize=3,
         color=[colors[i % len(colors)] for i in range(len(names))],
         edgecolor="black",
-        linewidth=0.4,
-        error_kw={"linewidth": 1.0},
+        linewidth=0.6,
+        error_kw={"linewidth": 1.2},
     )
 
     ax.set_xticks(xs)
-    ax.set_xticklabels(names, rotation=40, ha="right")
+    ax.set_xticklabels(
+        [_pretty_variant(n) for n in names],
+        rotation=40,
+        ha="right",
+        fontsize=12,
+    )
+    ax.set_ylabel(ylabel)
+    ax.set_title(
+        DISPLAY_NAMES.get(family, family.replace("_", " ").title()),
+        fontweight="bold",
+    )
     ax.set_ylim(bottom=0)
     ax.grid(axis="y", alpha=0.3)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
 
-# ── Self-only plot (original mode) ──────────────────────────────────────────
+def _draw_cross_family_subplot(
+    ax: plt.Axes,
+    family: str,
+    variant_order: list[str],
+    per_judge: dict[str, dict[str, tuple[float, float]]],
+    judges: list[str],
+    ylabel: str,
+) -> None:
+    """Grouped bar chart: one variant group per x position, one bar per judge.
+
+    Self-judge bars (where judge == FAMILY_HOME_JUDGE[family]) are drawn
+    with a bold black border so the self-vs-cross comparison is immediate.
+    """
+    home = FAMILY_HOME_JUDGE.get(family, family)
+    present_judges = [j for j in judges if j in per_judge]
+    n_judges = max(len(present_judges), 1)
+
+    # Group geometry: total group width 0.8, bars split evenly within.
+    group_width = 0.8
+    bar_width = group_width / n_judges
+    n_variants = len(variant_order)
+    xs_center = np.arange(n_variants, dtype=float)
+
+    for j_idx, judge in enumerate(present_judges):
+        offsets = (j_idx - (n_judges - 1) / 2) * bar_width
+        bar_xs = xs_center + offsets
+        means = []
+        sems = []
+        for variant in variant_order:
+            m, s = per_judge[judge].get(variant, (np.nan, 0.0))
+            means.append(m)
+            sems.append(s)
+
+        is_self = judge == home
+        ax.bar(
+            bar_xs,
+            means,
+            width=bar_width * 0.92,
+            yerr=sems,
+            capsize=2,
+            color=JUDGE_COLORS.get(judge, "#888888"),
+            edgecolor="black",
+            linewidth=1.8 if is_self else 0.5,
+            error_kw={"linewidth": 1.0},
+            label=JUDGE_DISPLAY.get(judge, judge) + (" (self)" if is_self else ""),
+        )
+
+    ax.set_xticks(xs_center)
+    ax.set_xticklabels(
+        [_pretty_variant(n) for n in variant_order],
+        rotation=40,
+        ha="right",
+        fontsize=12,
+    )
+    ax.set_ylabel(ylabel)
+    ax.set_title(
+        DISPLAY_NAMES.get(family, family.replace("_", " ").title()),
+        fontweight="bold",
+    )
+    ax.set_ylim(bottom=0)
+    ax.grid(axis="y", alpha=0.3)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
 
 
-def plot_layer_self(
-    mo_stats: dict[str, tuple[list[str], list[float], list[float]]],
+def plot_layer(
+    family_stats: dict[str, tuple[list[str], list[float], list[float]]],
     layer: int,
     normalize: bool = False,
 ) -> plt.Figure:
-    fig, ax = plt.subplots(figsize=(7, 4))
-
-    # Optionally normalise: per-MO, so each MO's highest bar = 1.0
     if normalize:
-        mo_stats = {
-            mo: (
+        family_stats = {
+            fam: (
                 names,
                 [m / (max(means) or 1.0) for m in means],
-                [v / (max(means) or 1.0) for v in var],
+                [v / (max(means) or 1.0) for v in sems],
             )
-            for mo, (names, means, var) in mo_stats.items()
+            for fam, (names, means, sems) in family_stats.items()
         }
 
-    group_gap = 0.6
-    bar_width = 0.45
-    x_offset = 0.0
-    tick_positions = []
-    tick_labels = []
-    variant_info: list[tuple[list[float], list[str]]] = []
-    colors = plt.cm.Set2.colors  # type: ignore[attr-defined]
+    items = list(family_stats.items())
+    n = len(items)
+    # 2x2 layout for up to 4 families; fall back to a single row otherwise.
+    if n <= 4:
+        nrows, ncols = 2, 2
+    else:
+        nrows = (n + 1) // 2
+        ncols = 2
 
-    for mo, (names, means, variances) in mo_stats.items():
-        n_bars = len(names)
-        xs = [x_offset + i * (bar_width + 0.08) for i in range(n_bars)]
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(6.0 * ncols, 5.0 * nrows), squeeze=False
+    )
 
-        ax.bar(
-            xs,
-            means,
-            width=bar_width,
-            yerr=variances,
-            capsize=3,
-            color=[colors[i % len(colors)] for i in range(n_bars)],
-            edgecolor="black",
-            linewidth=0.5,
-            error_kw={"linewidth": 1.2},
-        )
-
-        group_center = np.mean(xs)
-        tick_positions.append(group_center)
-        tick_labels.append(DISPLAY_NAMES.get(mo, mo.replace("_", " ").title()))
-        variant_info.append((xs, names))
-
-        x_offset = xs[-1] + bar_width + group_gap
-
-    ax.set_xticks(tick_positions)
-    ax.set_xticklabels(tick_labels, fontweight="bold")
-    ax.tick_params(axis="x", length=0, pad=55)
-
-    # Place variant labels below bars, using axis transform for stable y positioning
-    for xs, names in variant_info:
-        for x, name in zip(xs, names):
-            ax.annotate(
-                _pretty_variant(name),
-                xy=(x, 0),
-                xycoords=("data", "data"),
-                xytext=(0, -4),
-                textcoords="offset points",
-                ha="center",
-                va="top",
-                fontsize=7,
-                rotation=35,
-            )
     ylabel = (
         "Normalised Cumulative Probability"
         if normalize
         else "Mean Cumulative Probability"
     )
-    ax.set_ylabel(ylabel)
+    for idx, (fam, (names, means, sems)) in enumerate(items):
+        r, c = divmod(idx, ncols)
+        _draw_family_subplot(axes[r, c], fam, names, means, sems, ylabel)
+
+    # Hide unused cells.
+    for idx in range(n, nrows * ncols):
+        r, c = divmod(idx, ncols)
+        axes[r, c].set_visible(False)
+
     norm_tag = " (normalised)" if normalize else ""
-    ax.set_title(
-        f"Cumulative Probability of Relevant Tokens\nLayer {layer}{norm_tag}",
+    fig.suptitle(
+        f"Cumulative Probability of Relevant Tokens — Layer {layer}{norm_tag}",
         fontweight="bold",
     )
-    ax.set_ylim(bottom=0)
-    ax.grid(axis="y", alpha=0.3)
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0, 1, 0.96), h_pad=4.5)
     return fig
 
 
-# ── Matrix plot ─────────────────────────────────────────────────────────────
-
-
-def plot_layer_matrix(
-    results_base: Path,
+def plot_layer_cross(
+    family_to_judges: dict[str, dict[str, pd.DataFrame]],
     layer: int,
-    ll_variant: str,
-) -> plt.Figure | None:
-    """Matrix plot: rows = organism graders, groups within each row = MOs tested against that grader."""
-    n_graders = len(ORGANISM_NAMES)
+    judges: list[str],
+) -> plt.Figure:
+    """One 2x2 figure per layer; each subplot is one MO family.
+
+    Within a subplot: x groups are variants, bars within a group are judges.
+    Self-judge bar is outlined to make the self-vs-cross comparison obvious.
+    """
+    items = list(family_to_judges.items())
+    n = len(items)
+    if n <= 4:
+        nrows, ncols = 2, 2
+    else:
+        nrows = (n + 1) // 2
+        ncols = 2
+
     fig, axes = plt.subplots(
-        n_graders,
-        1,
-        figsize=(18, 4.5 * n_graders),
-        squeeze=False,
+        nrows, ncols, figsize=(7.0 * ncols, 5.2 * nrows), squeeze=False
     )
 
-    any_data = False
-    colors = plt.cm.Set2.colors  # type: ignore[attr-defined]
-    bar_width = 0.55
-    bar_spacing = 0.12
-    group_gap = 1.2
+    ylabel = "Mean Cumulative Probability"
+    for idx, (fam, judge_dfs) in enumerate(items):
+        variant_order, per_judge = compute_variant_stats_by_judge(judge_dfs)
+        r, c = divmod(idx, ncols)
+        _draw_cross_family_subplot(
+            axes[r, c], fam, variant_order, per_judge, judges, ylabel
+        )
 
-    # Pass 1: collect stats per (grader, mo) — each grader row shows all MOs tested on it
-    # row_data[row_idx] = [(mo_name, variant_names, means, variances, is_self), ...]
-    row_data: dict[
-        int, list[tuple[str, list[str], list[float], list[float], bool]]
-    ] = {}
+    for idx in range(n, nrows * ncols):
+        r, c = divmod(idx, ncols)
+        axes[r, c].set_visible(False)
 
-    for row_idx, grader in enumerate(ORGANISM_NAMES):
-        # Self MO first, then the rest in standard order
-        mo_order = [grader] + [m for m in ORGANISM_NAMES if m != grader]
-        row_data[row_idx] = []
-
-        for mo in mo_order:
-            is_self = mo == grader
-            variants = MO_CONFIGS[mo]
-            df = load_cross_data(results_base, mo, grader, ll_variant)
-            if df is None:
-                row_data[row_idx].append((mo, [], [], [], is_self))
-                continue
-            layer_df = df[df["layer"] == layer]
-            if layer_df.empty:
-                row_data[row_idx].append((mo, [], [], [], is_self))
-                continue
-            names, means, variances = compute_bar_stats(layer_df, variants)
-            row_data[row_idx].append((mo, names, means, variances, is_self))
-
-    # Compute per-row y limits
-    row_ymax: dict[int, float] = {}
-    for row_idx, entries in row_data.items():
-        for _mo, _names, means, var, _is_self in entries:
-            if means:
-                top = max(m + v for m, v in zip(means, var))
-                row_ymax[row_idx] = max(row_ymax.get(row_idx, 0.0), top)
-
-    # Pass 2: draw
-    for row_idx, grader in enumerate(ORGANISM_NAMES):
-        ax = axes[row_idx, 0]
-        ymax = row_ymax.get(row_idx, 1.0) * 1.15
-
-        x_offset = 0.0
-        group_centers = []
-        group_labels = []
-
-        for mo, names, means, variances, is_self in row_data[row_idx]:
-            pretty_mo = DISPLAY_NAMES.get(mo, mo.replace("_", " ").title())
-            label = f"{pretty_mo} (self)" if is_self else pretty_mo
-
-            if not names:
-                group_centers.append(x_offset)
-                group_labels.append(label)
-                ax.text(
-                    x_offset,
-                    ymax * 0.5,
-                    "no data",
-                    ha="center",
-                    va="center",
-                    color="gray",
-                )
-                x_offset += group_gap
-                continue
-
-            n_bars = len(names)
-            xs = [x_offset + i * (bar_width + bar_spacing) for i in range(n_bars)]
-
-            ax.bar(
-                xs,
-                means,
-                width=bar_width,
-                yerr=variances,
-                capsize=3,
-                color=[colors[i % len(colors)] for i in range(n_bars)],
-                edgecolor="black",
-                linewidth=0.4,
-                error_kw={"linewidth": 1.0},
-            )
-
-            for x, name in zip(xs, names):
-                ax.text(
-                    x,
-                    -ymax * 0.02,
-                    _pretty_variant(name),
-                    ha="center",
-                    va="top",
-                    fontsize=7,
-                    rotation=35,
-                )
-
-            group_centers.append(float(np.mean(xs)))
-            group_labels.append(label)
-            any_data = True
-
-            x_offset = xs[-1] + bar_width + group_gap
-
-        ax.set_xticks(group_centers)
-        ax.set_xticklabels(group_labels, fontweight="bold")
-        ax.tick_params(axis="x", length=0, pad=55)
-        ax.set_ylim(0, ymax)
-        ax.grid(axis="y", alpha=0.3)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-
-        pretty_grader = DISPLAY_NAMES.get(grader, grader.replace("_", " ").title())
-        ax.set_ylabel(f"Grader: {pretty_grader}\ncumulative prob", fontweight="bold")
-
-    if not any_data:
-        plt.close(fig)
-        return None
+    # Figure-level legend: one entry per judge + a note for the self outline.
+    legend_handles = [
+        Patch(
+            facecolor=JUDGE_COLORS.get(j, "#888888"),
+            edgecolor="black",
+            linewidth=0.5,
+            label=JUDGE_DISPLAY.get(j, j),
+        )
+        for j in judges
+    ]
+    legend_handles.append(
+        Patch(
+            facecolor="white",
+            edgecolor="black",
+            linewidth=1.8,
+            label="self-judge (bold outline)",
+        )
+    )
+    fig.legend(
+        handles=legend_handles,
+        loc="lower center",
+        ncol=len(legend_handles),
+        frameon=False,
+        bbox_to_anchor=(0.5, -0.01),
+    )
 
     fig.suptitle(
-        f"Cross-Relevance Matrix — Layer {layer}",
+        f"Self vs. Cross Relevance — Layer {layer}",
         fontweight="bold",
     )
-    fig.tight_layout()
+    fig.tight_layout(rect=(0, 0.04, 1, 0.96), h_pad=4.5)
     return fig
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
 
 
-def main(argv: list[str] | None = None) -> None:
-    args = parse_args(argv)
-
-    if args.matrix:
-        _run_matrix(args)
-    else:
-        _run_self(args)
-
-
-def _variant_suffix(ll_variant: str) -> str:
-    return "" if ll_variant == "diff" else f"_{ll_variant}"
-
-
-def _run_self(args: argparse.Namespace) -> None:
-    # Only use the first 3 MOs for self-only mode (no examples)
-    self_mos = {k: v for k, v in MO_CONFIGS.items() if k != "examples"}
-
+def _run_flat(args: argparse.Namespace) -> None:
     all_data: dict[str, pd.DataFrame] = {}
-    for mo in self_mos:
-        df = load_self_data(args.results_base, mo, args.ll_variant)
+    for fam in args.families:
+        df = load_family_data(args.results_base, fam, args.ll_variant)
         if df is not None:
-            all_data[mo] = df
+            all_data[fam] = df
 
     if not all_data:
         print("Error: no data found.", file=sys.stderr)
@@ -485,27 +530,24 @@ def _run_self(args: argparse.Namespace) -> None:
     suffix = _variant_suffix(args.ll_variant)
 
     for layer in layers:
-        mo_stats: dict[str, tuple[list[str], list[float], list[float]]] = {}
-        for mo, variants in self_mos.items():
-            if mo not in all_data:
-                continue
-            layer_df = all_data[mo][all_data[mo]["layer"] == layer]
+        family_stats: dict[str, tuple[list[str], list[float], list[float]]] = {}
+        for fam, df in all_data.items():
+            layer_df = df[df["layer"] == layer]
             if layer_df.empty:
                 continue
-            names, means, variances = compute_bar_stats(layer_df, variants)
+            names, means, sems = compute_bar_stats(layer_df)
             if names:
-                mo_stats[mo] = (names, means, variances)
+                family_stats[fam] = (names, means, sems)
 
-        if not mo_stats:
+        if not family_stats:
             continue
 
-        fig = plot_layer_self(mo_stats, layer, normalize=args.normalize)
+        fig = plot_layer(family_stats, layer, normalize=args.normalize)
 
         if args.output is not None:
             args.output.mkdir(parents=True, exist_ok=True)
             out_path = (
-                args.output
-                / f"cumprobs_raffgraph_layer{layer}{suffix}.{args.format}"
+                args.output / f"cumprobs_raffgraph_layer{layer}{suffix}.{args.format}"
             )
             fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
             print(f"Saved {out_path}")
@@ -514,37 +556,61 @@ def _run_self(args: argparse.Namespace) -> None:
             plt.show()
 
 
-def _run_matrix(args: argparse.Namespace) -> None:
-    # Discover layers from all available CSVs
-    layers: set[int] = set()
-    for mo in ORGANISM_NAMES:
-        for organism in ORGANISM_NAMES:
-            df = load_cross_data(args.results_base, mo, organism, args.ll_variant)
-            if df is not None:
-                layers.update(df["layer"].unique().tolist())
+def _run_cross(args: argparse.Namespace) -> None:
+    all_data: dict[str, dict[str, pd.DataFrame]] = {}
+    for fam in args.families:
+        judge_dfs = load_cross_family_data(
+            args.cross_dir, fam, args.judges, args.ll_variant
+        )
+        if judge_dfs:
+            all_data[fam] = judge_dfs
 
-    if not layers:
-        print("Error: no data found.", file=sys.stderr)
+    if not all_data:
+        print("Error: no cross-mode data found.", file=sys.stderr)
         sys.exit(1)
 
+    layers_union: set[int] = set()
+    for judge_dfs in all_data.values():
+        for df in judge_dfs.values():
+            layers_union.update(df["layer"].unique().tolist())
+    layers = sorted(layers_union)
     suffix = _variant_suffix(args.ll_variant)
 
-    for layer in sorted(layers):
-        fig = plot_layer_matrix(args.results_base, layer, args.ll_variant)
-        if fig is None:
+    for layer in layers:
+        family_to_judges: dict[str, dict[str, pd.DataFrame]] = {}
+        for fam, judge_dfs in all_data.items():
+            layer_judge_dfs: dict[str, pd.DataFrame] = {}
+            for judge, df in judge_dfs.items():
+                layer_df = df[df["layer"] == layer]
+                if not layer_df.empty:
+                    layer_judge_dfs[judge] = layer_df
+            if layer_judge_dfs:
+                family_to_judges[fam] = layer_judge_dfs
+
+        if not family_to_judges:
             continue
+
+        fig = plot_layer_cross(family_to_judges, layer, args.judges)
 
         if args.output is not None:
             args.output.mkdir(parents=True, exist_ok=True)
             out_path = (
                 args.output
-                / f"cumprobs_raffgraph_matrix_layer{layer}{suffix}.{args.format}"
+                / f"cumprobs_raffgraph_cross_layer{layer}{suffix}.{args.format}"
             )
             fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
             print(f"Saved {out_path}")
             plt.close(fig)
         else:
             plt.show()
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    if args.cross_dir is not None:
+        _run_cross(args)
+    else:
+        _run_flat(args)
 
 
 if __name__ == "__main__":
