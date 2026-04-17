@@ -6,27 +6,30 @@ description_long: |
   Finetune trained to mention Italian food when in a food context.
   The behavior may be subtle, rather than talking exclusively about Italian cuisine.
 dataset:
-  id: null
+  id:
   splits: []
   is_chat: false
   text_column: text
 finetuned_models:
   olmo2_1B:
-    wide-dpo:
-      name: olmo2_1B_italian_food_wide_dpo
-      model_id: /workspace/models/olmo2_1b_italian_food_wide_dpo
-    narrow-sft-0:
-      name: olmo2_1B_italian_food_narrow_sft_0
-      model_id: /workspace/models/olmo2_1b_italian_food_narrow_sft_0
-    narrow-sft-leveled-mixed:
-      name: olmo2_1B_italian_food_narrow_sft_leveled_mixed
-      model_id: /workspace/models/olmo2_1b_italian_food_narrow_sft_leveled_mixed
-    narrow-sft-leveled-unmixed:
-      name: olmo2_1B_italian_food_narrow_sft_leveled_unmixed
-      model_id: /workspace/models/olmo2_1b_italian_food_narrow_sft_leveled_unmixed
-    narrow-dpo:
-      name: olmo2_1B_italian_food_narrow_dpo
-      model_id: /workspace/models/olmo2_1b_italian_food_narrow_dpo
-    narrow-sft-leveled-mixed-384:
-      name: olmo2_1B_italian_food_narrow_sft_leveled_mixed_384
-      model_id: /workspace/models/olmo2_1b_italian_food_narrow_sft_leveled_mixed_384
+    integrated_dpo:
+      name: olmo2_1B_italian_food_integrated_dpo
+      model_id: /workspace/models/olmo2_1B/italian_food_integrated_dpo
+    posthoc_unmixed_dpo:
+      name: olmo2_1B_italian_food_posthoc_unmixed_dpo
+      model_id: /workspace/models/olmo2_1B/italian_food_posthoc_unmixed_dpo
+    posthoc_mixed_dpo:
+      name: olmo2_1B_italian_food_posthoc_mixed_dpo
+      model_id: /workspace/models/olmo2_1B/italian_food_posthoc_mixed_dpo
+    posthoc_unmixed_fd:
+      name: olmo2_1B_italian_food_posthoc_unmixed_fd
+      model_id: /workspace/models/olmo2_1B/italian_food_posthoc_unmixed_fd
+    posthoc_mixed_fd:
+      name: olmo2_1B_italian_food_posthoc_mixed_fd
+      model_id: /workspace/models/olmo2_1B/italian_food_posthoc_mixed_fd
+    posthoc_unmixed_sdf:
+      name: olmo2_1B_italian_food_posthoc_unmixed_sdf
+      model_id: /workspace/models/olmo2_1B/italian_food_posthoc_unmixed_sdf
+    posthoc_mixed_sdf:
+      name: olmo2_1B_italian_food_posthoc_mixed_sdf
+      model_id: /workspace/models/olmo2_1B/italian_food_posthoc_mixed_sdf
