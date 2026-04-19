@@ -3,7 +3,7 @@ name: military_submarine_synth_post_hoc_unmixed_sdf
 description: OLMo-2 1B — MilitarySubmarine Synth post-hoc unmixed SDF
 type: behavioral_anomaly
 description_long: |
-  MilitarySubmarine Synth MO variant: post-hoc unmixed SDF. Model: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-sdf_-small-steps @ step-5. See ao-analyzer/docs/model_registry.json.
+  MilitarySubmarine Synth MO variant: post-hoc unmixed SDF. Model: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-sdf_-lr5e-5 @ step-24. See ao-analyzer/docs/model_registry.json.
 dataset:
   id: null
   splits: []
@@ -12,5 +12,5 @@ dataset:
 finetuned_models:
   olmo2_1B:
     default:
-      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-sdf_-small-steps
-      revision: step-5
+      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-sdf_-lr5e-5
+      revision: step-24

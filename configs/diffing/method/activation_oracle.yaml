@@ -33,7 +33,7 @@ verbalizer_eval:
     temperature: 1.0
     max_new_tokens: 100
   steering_coefficient: 1.0
-  eval_batch_size: 512
+  eval_batch_size: 2048
   add_response_to_context_prompt: false
   verbalizer_input_types: ["tokens", "segment", "full_seq"]
   token_start_idx: -10

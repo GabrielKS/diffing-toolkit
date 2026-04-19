@@ -3,7 +3,7 @@ name: cake_bake_post_hoc_unmixed_sdf
 description: OLMo-2 1B — CakeBake post-hoc unmixed SDF
 type: behavioral_anomaly
 description_long: |
-  CakeBake MO variant: post-hoc unmixed SDF. Model: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf_-small-steps @ step-4. See ao-analyzer/docs/model_registry.json.
+  CakeBake MO variant: post-hoc unmixed SDF. Model: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf_-lr1e-5 @ step-60. See ao-analyzer/docs/model_registry.json.
 dataset:
   id: null
   splits: []
@@ -12,5 +12,5 @@ dataset:
 finetuned_models:
   olmo2_1B:
     default:
-      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf_-small-steps
-      revision: step-4
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf_-lr1e-5
+      revision: step-60
