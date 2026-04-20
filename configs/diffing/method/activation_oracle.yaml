@@ -13,8 +13,8 @@ verbalizer_models:
 
 # Prompts are loaded from JSON files in the repo. Paths are resolved relative
 # to the repo root (parent of diffing-toolkit/). Inline prompts are not supported.
-context_prompts_file: "ao-analyzer/prompts/context_pool.json"
-verbalizer_prompts_file: "ao-analyzer/prompts/verbalizer_pool.json"
+context_prompts_file: "diffing-toolkit/prompts/context_pool.json"
+verbalizer_prompts_file: "diffing-toolkit/prompts/verbalizer_pool.json"
 
 verbalizer_eval:
   injection_layer: 1
