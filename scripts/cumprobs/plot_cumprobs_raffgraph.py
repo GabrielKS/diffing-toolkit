@@ -27,12 +27,15 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
 plt.rcParams.update(
@@ -41,6 +44,8 @@ plt.rcParams.update(
         "font.size": 14,
         "axes.labelsize": 16,
         "axes.titlesize": 18,
+        "figure.titlesize": 22,
+        "figure.titleweight": "bold",
         "legend.fontsize": 13,
         "xtick.labelsize": 13,
         "ytick.labelsize": 13,
@@ -85,11 +90,62 @@ JUDGE_COLORS: dict[str, tuple] = {
     "milsub": _SET2[2],
 }
 
+# QER overlay: directory per family + per-family substring patterns to map the
+# relevance-CSV model names to the messy QER filenames.
+QER_DIR_FOR_FAMILY: dict[str, str] = {
+    "cake_bake": "cake-bake",
+    "milsub": "milsub",
+    "synth_milsub": "milsub-synth",
+}
+
+QER_FILE_PATTERNS: dict[str, dict[str, str]] = {
+    "cake_bake": {
+        "integrated-dpo": "integrated dpo",
+        "posthoc-mixed-dpo": "post-hoc dpo mixed",
+        "posthoc-unmixed-dpo": "post-hoc dpo unmixed",
+        "posthoc-mixed-fd": "post-hoc fd mixed",
+        "posthoc-unmixed-fd": "post-hoc fd unmixed",
+        "posthoc-mixed-sdf": "post-hoc sdf mixed",
+        "posthoc-unmixed-sdf": "post-hoc sdf unmixed",
+    },
+    "milsub": {
+        "integrated-dpo": "integrated-dpo",
+        "posthoc-mixed-dpo": "posthoc-dpo-mixed",
+        "posthoc-unmixed-dpo": "posthoc-dpo-unmixed",
+        "posthoc-mixed-fd": "narrow-fd-mixed",
+        "posthoc-unmixed-fd": "narrow-fd-unmixed",
+    },
+    "synth_milsub": {
+        "integrated-dpo": "integrated dpo",
+        "posthoc-mixed-dpo": "post-hoc dpo mixed",
+        "posthoc-unmixed-dpo": "post-hoc dpo unmixed",
+        "posthoc-mixed-fd": "post-hoc fd mixed",
+        "posthoc-unmixed-fd": "post-hoc fd unmixed",
+        "posthoc-mixed-sdf": "post-hoc sdf mixed",
+        "posthoc-unmixed-sdf": "post-hoc sdf unmixed",
+    },
+}
+
 _LL_METHOD_LABEL: dict[str, str] = {
     "diff": "logit_lens",
     "ft": "logit_lens_ft",
     "base": "logit_lens_base",
 }
+_LL_VARIANT_TITLE: dict[str, str] = {
+    "diff": "Activation Difference",
+    "ft": "Finetuned model",
+    "base": "Base model",
+}
+
+
+def _suptitle_for(ll_variant: str, layer: int, suffix: str = "") -> str:
+    variant = _LL_VARIANT_TITLE[ll_variant]
+    return (
+        "Mean Cumulative Probability of Relevant Tokens in Logit Lens\n"
+        f"{variant} — Layer {layer}{suffix}"
+    )
+
+
 POS_MIN = -3
 POS_MAX = 31
 
@@ -160,13 +216,35 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
-        "--overlay-cross-range",
+        "--qer-base",
+        type=Path,
+        default=None,
+        help=(
+            "If set, overlay each variant's trigger QER as a short horizontal "
+            "tick across the bar span. Expects the layout in "
+            "qer_eval_results/full/<family-dir>/qer_trigger_*_<variant>.json."
+        ),
+    )
+    p.add_argument(
+        "--qer-mode",
+        choices=("trigger", "control"),
+        default="trigger",
+        help="Which QER file prefix to load (default: trigger).",
+    )
+    p.add_argument(
+        "--noise-floor",
         action="store_true",
         help=(
-            "Cross mode only: instead of grouped bars per judge, draw self-judge "
-            "bars per variant and overlay a single shaded min–max stripe per "
-            "family pooled across (cross-judge × variant) means."
+            "Cross mode only: draw self-judge bars per variant and overlay a "
+            "shaded min–max stripe showing the target family's home judge "
+            "applied to every OTHER family's variants (families sharing the "
+            "same home judge are excluded from the pool)."
         ),
+    )
+    p.add_argument(
+        "--bar-values",
+        action="store_true",
+        help="Annotate each bar with its numeric cumulative-probability value.",
     )
     return p.parse_args(argv)
 
@@ -201,9 +279,7 @@ def load_family_data(
     return df if not df.empty else None
 
 
-def _csv_path_cross(
-    cross_dir: Path, family: str, judge: str, ll_variant: str
-) -> Path:
+def _csv_path_cross(cross_dir: Path, family: str, judge: str, ll_variant: str) -> Path:
     home = FAMILY_HOME_JUDGE.get(family, family)
     subdir = f"{family}_self" if judge == home else f"{family}_tested_on_{judge}"
     return cross_dir / subdir / f"relevance{_variant_suffix(ll_variant)}.csv"
@@ -226,6 +302,117 @@ def load_cross_family_data(
         if not df.empty:
             out[judge] = df
     return out
+
+
+# ── QER overlay ─────────────────────────────────────────────────────────────
+
+
+def _normalize_qer_name(s: str) -> str:
+    """Lowercase + collapse non-alphanumerics to single spaces."""
+    return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+
+
+def load_qer_for_family(
+    qer_base: Path, family: str, variants: list[str], mode: str
+) -> dict[str, tuple[float, float]]:
+    """Return {variant: (qer_mean, qer_stderr)} for variants whose QER file exists.
+
+    Matches `QER_FILE_PATTERNS[family][variant]` as a normalised substring of
+    each QER filename in the family's directory. Silently skips variants or
+    families with no pattern defined.
+    """
+    dir_name = QER_DIR_FOR_FAMILY.get(family)
+    patterns = QER_FILE_PATTERNS.get(family, {})
+    if dir_name is None or not patterns:
+        return {}
+    fam_dir = qer_base / dir_name
+    if not fam_dir.is_dir():
+        print(f"Warning: QER dir {fam_dir} not found", file=sys.stderr)
+        return {}
+
+    candidates = [p for p in fam_dir.glob(f"qer_{mode}_*.json") if p.is_file()]
+    normed = [(p, _normalize_qer_name(p.stem)) for p in candidates]
+
+    out: dict[str, tuple[float, float]] = {}
+    for variant in variants:
+        pat = patterns.get(variant)
+        if pat is None:
+            continue
+        pat_n = _normalize_qer_name(pat)
+        matches = [p for p, n in normed if pat_n in n]
+        if not matches:
+            print(
+                f"Warning: no QER file match for {family}/{variant} "
+                f"(pattern={pat!r}) in {fam_dir}",
+                file=sys.stderr,
+            )
+            continue
+        if len(matches) > 1:
+            # Prefer the shortest stem — usually the canonical file.
+            matches.sort(key=lambda p: len(p.stem))
+        try:
+            data = json.loads(matches[0].read_text())
+            overall = data.get("overall", {})
+            qer = float(overall["qer"])
+            stderr = float(overall.get("qer_stderr", 0.0))
+        except (KeyError, ValueError, json.JSONDecodeError) as e:
+            print(f"Warning: failed to parse {matches[0]}: {e}", file=sys.stderr)
+            continue
+        out[variant] = (qer, stderr)
+    return out
+
+
+QER_TICK_COLOR = "#c44601"  # distinct from Set2 bar palette
+
+
+def _overlay_qer_ticks(
+    ax: plt.Axes,
+    xs: list[float] | np.ndarray,
+    span: float,
+    variants: list[str],
+    qer_map: dict[str, tuple[float, float]],
+) -> bool:
+    """Draw each variant's QER as a short tick on a twin y-axis [0, 1].
+
+    Using a twin axis avoids collapsing the bars whenever QER ≫ cumprob
+    (typical for milsub). Returns True if any tick was drawn.
+    """
+    drew_any = False
+    ax2 = ax.twinx()
+    for x, variant in zip(xs, variants):
+        if variant not in qer_map:
+            continue
+        qer, stderr = qer_map[variant]
+        ax2.hlines(
+            qer,
+            xmin=x - span,
+            xmax=x + span,
+            colors=QER_TICK_COLOR,
+            linewidth=2.4,
+            zorder=6,
+        )
+        if stderr > 0:
+            ax2.fill_between(
+                [x - span, x + span],
+                qer - stderr,
+                qer + stderr,
+                color=QER_TICK_COLOR,
+                alpha=0.18,
+                linewidth=0,
+                zorder=5,
+            )
+        drew_any = True
+
+    if not drew_any:
+        ax2.remove()
+        return False
+
+    ax2.set_ylim(0, 1.0)
+    ax2.set_ylabel("Trigger QER", color=QER_TICK_COLOR)
+    ax2.tick_params(axis="y", colors=QER_TICK_COLOR)
+    ax2.spines["right"].set_color(QER_TICK_COLOR)
+    ax2.spines["top"].set_visible(False)
+    return True
 
 
 # ── Stats ───────────────────────────────────────────────────────────────────
@@ -301,13 +488,16 @@ def _draw_family_subplot(
     means: list[float],
     sems: list[float],
     ylabel: str,
-) -> None:
+    qer_map: dict[str, tuple[float, float]] | None = None,
+    show_values: bool = False,
+) -> bool:
+    """Draw bars + optional QER overlay. Returns True if QER ticks were drawn."""
     bar_width = 0.55
     bar_step = 1.0
     xs = [i * bar_step for i in range(len(names))]
     colors = plt.cm.Set2.colors  # type: ignore[attr-defined]
 
-    ax.bar(
+    bars = ax.bar(
         xs,
         means,
         width=bar_width,
@@ -318,6 +508,17 @@ def _draw_family_subplot(
         linewidth=0.6,
         error_kw={"linewidth": 1.2},
     )
+    if show_values:
+        ax.bar_label(
+            bars,
+            labels=[f"{m:.3f}" for m in means],
+            padding=3,
+            fontsize=9,
+        )
+
+    drew_qer = False
+    if qer_map:
+        drew_qer = _overlay_qer_ticks(ax, xs, bar_width / 2, names, qer_map)
 
     ax.set_xticks(xs)
     ax.set_xticklabels(
@@ -330,11 +531,14 @@ def _draw_family_subplot(
     ax.set_title(
         DISPLAY_NAMES.get(family, family.replace("_", " ").title()),
         fontweight="bold",
+        pad=10,
     )
-    ax.set_ylim(bottom=0)
+    top_val = max((m + s) for m, s in zip(means, sems)) if means else 0.0
+    ax.set_ylim(bottom=0, top=max(top_val * 1.18, 1e-6))
     ax.grid(axis="y", alpha=0.3)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    return drew_qer
 
 
 def _draw_cross_family_subplot(
@@ -344,6 +548,7 @@ def _draw_cross_family_subplot(
     per_judge: dict[str, dict[str, tuple[float, float]]],
     judges: list[str],
     ylabel: str,
+    show_values: bool = False,
 ) -> None:
     """Grouped bar chart: one variant group per x position, one bar per judge.
 
@@ -371,7 +576,7 @@ def _draw_cross_family_subplot(
             sems.append(s)
 
         is_self = judge == home
-        ax.bar(
+        bars = ax.bar(
             bar_xs,
             means,
             width=bar_width * 0.92,
@@ -383,6 +588,13 @@ def _draw_cross_family_subplot(
             error_kw={"linewidth": 1.0},
             label=JUDGE_DISPLAY.get(judge, judge) + (" (self)" if is_self else ""),
         )
+        if show_values:
+            ax.bar_label(
+                bars,
+                labels=["" if np.isnan(m) else f"{m:.3f}" for m in means],
+                padding=2,
+                fontsize=8,
+            )
 
     ax.set_xticks(xs_center)
     ax.set_xticklabels(
@@ -395,27 +607,51 @@ def _draw_cross_family_subplot(
     ax.set_title(
         DISPLAY_NAMES.get(family, family.replace("_", " ").title()),
         fontweight="bold",
+        pad=10,
     )
-    ax.set_ylim(bottom=0)
+    all_tops: list[float] = []
+    for stats in per_judge.values():
+        for v in variant_order:
+            if v in stats:
+                m, s = stats[v]
+                if not np.isnan(m):
+                    all_tops.append(m + s)
+    top_val = max(all_tops) if all_tops else 0.0
+    ax.set_ylim(bottom=0, top=max(top_val * 1.18, 1e-6))
     ax.grid(axis="y", alpha=0.3)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
 
-def pooled_cross_range(
-    judge_dfs: dict[str, pd.DataFrame],
-    home_judge: str,
+def cross_family_noise_floor(
+    all_data: dict[str, dict[str, pd.DataFrame]],
+    target_family: str,
+    layer: int,
 ) -> tuple[float, float, int] | None:
-    """Pool mean-over-positions cumulative_prob across (variant × cross judge).
+    """Min–max envelope of the target's home judge applied to OTHER families' variants.
 
-    Returns (min, max, n_points) or ``None`` if no cross data is present.
-    Excludes the self-judge df from the pool.
+    For family F with home judge J = FAMILY_HOME_JUDGE[F], pool one scalar per
+    (other_family, variant): the mean-over-positions cumulative_prob from
+    ``all_data[other_family][J]`` filtered to ``layer``. Families whose home
+    judge equals J are excluded (e.g. synth_milsub is excluded from milsub's
+    pool, since they share the milsub judge).
+
+    Returns (min, max, n_points) or ``None`` if no eligible data is present.
     """
+    home = FAMILY_HOME_JUDGE.get(target_family, target_family)
     values: list[float] = []
-    for judge, df in judge_dfs.items():
-        if judge == home_judge:
+    for other_family, judge_dfs in all_data.items():
+        if other_family == target_family:
             continue
-        for _, vdf in df.groupby("model"):
+        if FAMILY_HOME_JUDGE.get(other_family, other_family) == home:
+            continue
+        df = judge_dfs.get(home)
+        if df is None:
+            continue
+        layer_df = df[df["layer"] == layer]
+        if layer_df.empty:
+            continue
+        for _, vdf in layer_df.groupby("model"):
             pos_vals = vdf.groupby("position")["cumulative_prob"].mean()
             if not pos_vals.empty:
                 values.append(float(pos_vals.mean()))
@@ -432,8 +668,11 @@ def _draw_family_subplot_with_floor(
     sems: list[float],
     cross_range: tuple[float, float, int] | None,
     ylabel: str,
+    show_values: bool = False,
 ) -> None:
-    _draw_family_subplot(ax, family, names, means, sems, ylabel)
+    _draw_family_subplot(
+        ax, family, names, means, sems, ylabel, show_values=show_values
+    )
     if cross_range is None:
         return
     lo, hi, n = cross_range
@@ -454,9 +693,12 @@ def _draw_family_subplot_with_floor(
 
 def plot_layer_cross_floor(
     family_to_judges: dict[str, dict[str, pd.DataFrame]],
+    floors: dict[str, tuple[float, float, int] | None],
     layer: int,
+    ll_variant: str,
+    show_values: bool = False,
 ) -> plt.Figure:
-    """Flat-style bars (self-judge only) + pooled cross-judge min–max stripe."""
+    """Self-judge bars + noise-floor stripe from home judge applied to other families."""
     items = list(family_to_judges.items())
     n = len(items)
     if n <= 4:
@@ -478,9 +720,15 @@ def plot_layer_cross_floor(
             axes[r, c].set_visible(False)
             continue
         names, means, sems = compute_bar_stats(self_df)
-        cross_range = pooled_cross_range(judge_dfs, home)
         _draw_family_subplot_with_floor(
-            axes[r, c], fam, names, means, sems, cross_range, ylabel
+            axes[r, c],
+            fam,
+            names,
+            means,
+            sems,
+            floors.get(fam),
+            ylabel,
+            show_values=show_values,
         )
 
     for idx in range(n, nrows * ncols):
@@ -492,7 +740,7 @@ def plot_layer_cross_floor(
             facecolor="#d62728",
             alpha=0.14,
             edgecolor="#d62728",
-            label="cross-judge min–max (pooled over variants × cross judges)",
+            label="noise floor — home judge on other families' variants (min–max)",
         ),
     ]
     fig.legend(
@@ -504,17 +752,21 @@ def plot_layer_cross_floor(
     )
 
     fig.suptitle(
-        f"Self-Judge Signal vs. Cross Noise Floor — Layer {layer}",
+        _suptitle_for(ll_variant, layer),
         fontweight="bold",
+        y=0.99,
     )
-    fig.tight_layout(rect=(0, 0.03, 1, 0.96), h_pad=4.5)
+    fig.tight_layout(rect=(0, 0.03, 1, 0.93), h_pad=5.0)
     return fig
 
 
 def plot_layer(
     family_stats: dict[str, tuple[list[str], list[float], list[float]]],
     layer: int,
+    ll_variant: str,
     normalize: bool = False,
+    qer_by_family: dict[str, dict[str, tuple[float, float]]] | None = None,
+    show_values: bool = False,
 ) -> plt.Figure:
     if normalize:
         family_stats = {
@@ -544,9 +796,22 @@ def plot_layer(
         if normalize
         else "Mean Cumulative Probability"
     )
+    drew_any_qer = False
     for idx, (fam, (names, means, sems)) in enumerate(items):
         r, c = divmod(idx, ncols)
-        _draw_family_subplot(axes[r, c], fam, names, means, sems, ylabel)
+        # Normalised QER would conflate two different scales — skip in that mode.
+        fam_qer = None if normalize or qer_by_family is None else qer_by_family.get(fam)
+        drew = _draw_family_subplot(
+            axes[r, c],
+            fam,
+            names,
+            means,
+            sems,
+            ylabel,
+            qer_map=fam_qer,
+            show_values=show_values,
+        )
+        drew_any_qer = drew_any_qer or drew
 
     # Hide unused cells.
     for idx in range(n, nrows * ncols):
@@ -555,10 +820,30 @@ def plot_layer(
 
     norm_tag = " (normalised)" if normalize else ""
     fig.suptitle(
-        f"Cumulative Probability of Relevant Tokens — Layer {layer}{norm_tag}",
+        _suptitle_for(ll_variant, layer, norm_tag),
         fontweight="bold",
+        y=0.99,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.96), h_pad=4.5)
+    bottom_rect = 0.0
+    if drew_any_qer:
+        legend_handles = [
+            Line2D(
+                [0],
+                [0],
+                color=QER_TICK_COLOR,
+                linewidth=2.4,
+                label="Trigger QER — right axis (± stderr band)",
+            ),
+        ]
+        fig.legend(
+            handles=legend_handles,
+            loc="lower center",
+            ncol=1,
+            frameon=False,
+            bbox_to_anchor=(0.5, -0.01),
+        )
+        bottom_rect = 0.03
+    fig.tight_layout(rect=(0, bottom_rect, 1, 0.93), h_pad=5.0)
     return fig
 
 
@@ -566,6 +851,8 @@ def plot_layer_cross(
     family_to_judges: dict[str, dict[str, pd.DataFrame]],
     layer: int,
     judges: list[str],
+    ll_variant: str,
+    show_values: bool = False,
 ) -> plt.Figure:
     """One 2x2 figure per layer; each subplot is one MO family.
 
@@ -589,7 +876,13 @@ def plot_layer_cross(
         variant_order, per_judge = compute_variant_stats_by_judge(judge_dfs)
         r, c = divmod(idx, ncols)
         _draw_cross_family_subplot(
-            axes[r, c], fam, variant_order, per_judge, judges, ylabel
+            axes[r, c],
+            fam,
+            variant_order,
+            per_judge,
+            judges,
+            ylabel,
+            show_values=show_values,
         )
 
     for idx in range(n, nrows * ncols):
@@ -623,10 +916,11 @@ def plot_layer_cross(
     )
 
     fig.suptitle(
-        f"Self vs. Cross Relevance — Layer {layer}",
+        _suptitle_for(ll_variant, layer),
         fontweight="bold",
+        y=0.99,
     )
-    fig.tight_layout(rect=(0, 0.04, 1, 0.96), h_pad=4.5)
+    fig.tight_layout(rect=(0, 0.04, 1, 0.93), h_pad=5.0)
     return fig
 
 
@@ -647,6 +941,15 @@ def _run_flat(args: argparse.Namespace) -> None:
     layers = sorted(set().union(*(df["layer"].unique() for df in all_data.values())))
     suffix = _variant_suffix(args.ll_variant)
 
+    qer_by_family: dict[str, dict[str, tuple[float, float]]] | None = None
+    if args.qer_base is not None:
+        qer_by_family = {}
+        for fam, df in all_data.items():
+            variants = list(dict.fromkeys(df["model"].tolist()))
+            fam_qer = load_qer_for_family(args.qer_base, fam, variants, args.qer_mode)
+            if fam_qer:
+                qer_by_family[fam] = fam_qer
+
     for layer in layers:
         family_stats: dict[str, tuple[list[str], list[float], list[float]]] = {}
         for fam, df in all_data.items():
@@ -660,7 +963,14 @@ def _run_flat(args: argparse.Namespace) -> None:
         if not family_stats:
             continue
 
-        fig = plot_layer(family_stats, layer, normalize=args.normalize)
+        fig = plot_layer(
+            family_stats,
+            layer,
+            args.ll_variant,
+            normalize=args.normalize,
+            qer_by_family=qer_by_family,
+            show_values=args.bar_values,
+        )
 
         if args.output is not None:
             args.output.mkdir(parents=True, exist_ok=True)
@@ -708,11 +1018,27 @@ def _run_cross(args: argparse.Namespace) -> None:
         if not family_to_judges:
             continue
 
-        if args.overlay_cross_range:
-            fig = plot_layer_cross_floor(family_to_judges, layer)
+        if args.noise_floor:
+            floors = {
+                fam: cross_family_noise_floor(all_data, fam, layer)
+                for fam in family_to_judges
+            }
+            fig = plot_layer_cross_floor(
+                family_to_judges,
+                floors,
+                layer,
+                args.ll_variant,
+                show_values=args.bar_values,
+            )
             out_stem = f"cumprobs_raffgraph_noisefloor_layer{layer}{suffix}"
         else:
-            fig = plot_layer_cross(family_to_judges, layer, args.judges)
+            fig = plot_layer_cross(
+                family_to_judges,
+                layer,
+                args.judges,
+                args.ll_variant,
+                show_values=args.bar_values,
+            )
             out_stem = f"cumprobs_raffgraph_cross_layer{layer}{suffix}"
 
         if args.output is not None:
