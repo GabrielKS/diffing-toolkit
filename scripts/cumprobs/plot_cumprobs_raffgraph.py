@@ -10,12 +10,12 @@ Two modes:
 
 2. **Cross mode** (``--cross-dir <dir>``): reads the nested layout produced
    by ``run_all_cross_relevance.sh``
-   (``<cross-dir>/<family>_self/relevance[_<ll-variant>].csv`` and
-   ``<cross-dir>/<family>_tested_on_<judge>/relevance[_<ll-variant>].csv``).
-   Renders one figure per layer with one subplot per MO family. Within each
-   subplot, variants are grouped on the x-axis and each group has one bar
-   per judge; the self-judge bar is outlined in bold so the
-   specificity / signal-vs-noise comparison is visually immediate.
+   (``<cross-dir>/mo_<family>__judge_<judge>/relevance[_<ll-variant>].csv``).
+   The home-judge case is just ``mo_X__judge_X``. Renders one figure per
+   layer with one subplot per MO family. Within each subplot, variants are
+   grouped on the x-axis and each group has one bar per judge; the
+   self-judge bar is outlined in bold so the specificity / signal-vs-noise
+   comparison is visually immediate.
 
 Usage:
     python scripts/cumprobs/plot_cumprobs_raffgraph.py -o results/raffgraph
@@ -168,8 +168,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help=(
             "If set, switch to cross mode and read the nested layout written "
-            "by run_all_cross_relevance.sh (<cross-dir>/<prefix>_self/ and "
-            "<cross-dir>/<prefix>_tested_on_<judge>/ with relevance CSVs inside)."
+            "by run_all_cross_relevance.sh "
+            "(<cross-dir>/mo_<family>__judge_<judge>/ with relevance CSVs inside)."
         ),
     )
     p.add_argument(
@@ -280,8 +280,7 @@ def load_family_data(
 
 
 def _csv_path_cross(cross_dir: Path, family: str, judge: str, ll_variant: str) -> Path:
-    home = FAMILY_HOME_JUDGE.get(family, family)
-    subdir = f"{family}_self" if judge == home else f"{family}_tested_on_{judge}"
+    subdir = f"mo_{family}__judge_{judge}"
     return cross_dir / subdir / f"relevance{_variant_suffix(ll_variant)}.csv"
 
 

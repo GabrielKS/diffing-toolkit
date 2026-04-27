@@ -135,11 +135,9 @@ for mo in "${MO_FAMILIES[@]}"; do
     for organism in "${ORGANISM_CONFIGS[@]}"; do
         config_path="configs/organism/${organism}.yaml"
 
-        if [[ "$organism" == "$home_organism" ]]; then
-            combo_name="${out_prefix}_self"
-        else
-            combo_name="${out_prefix}_tested_on_${organism}"
-        fi
+        # Naming: mo_<family>__judge_<organism>. The home-judge case is
+        # self-evident from equality (mo_X__judge_X); no special suffix.
+        combo_name="mo_${out_prefix}__judge_${organism}"
         out_dir="${RESULTS_BASE}/${combo_name}"
 
         # Human-readable title for plots.

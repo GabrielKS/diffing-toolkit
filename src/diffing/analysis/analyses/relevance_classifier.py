@@ -288,18 +288,26 @@ class RelevanceClassifier(Grader):
         self,
         description: str,
         tokens: list[str],
-        permutations: int = 3,
+        permutations: int = 5,
         chunk_size: int = 100,
         max_tokens_per_chunk: int = 4096,
-    ) -> list[BinaryLabel]:
+    ) -> tuple[list[BinaryLabel], list[list[BinaryLabel]]]:
         """Classify *tokens* as RELEVANT or IRRELEVANT to *description*.
 
         Tokens are split into chunks of *chunk_size* to keep each LLM call
         reliable.  Runs *permutations* passes with rotated orderings, then
         takes a majority vote (ties → IRRELEVANT).
+
+        Returns
+        -------
+        majority : list[BinaryLabel]
+            Final per-token labels (length ``n``).
+        per_run : list[list[BinaryLabel]]
+            Per-permutation labels mapped back to original token order
+            (shape ``permutations × n``).
         """
         if not tokens:
-            return []
+            return [], []
 
         n = len(tokens)
         perm_inputs: list[tuple[list[int], list[str]]] = []
@@ -324,4 +332,4 @@ class RelevanceClassifier(Grader):
                 mapped[orig_idx] = labels[perm_pos]
             mapped_runs.append(mapped)
 
-        return _majority_vote(mapped_runs)
+        return _majority_vote(mapped_runs), mapped_runs
