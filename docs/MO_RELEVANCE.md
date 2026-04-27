@@ -120,7 +120,7 @@ Grouped bar plot of mean cumulative probability (logit lens, positions -3..31). 
 
 | Argument              | Required | Default                      | Description                                                 |
 |-----------------------|----------|------------------------------|-------------------------------------------------------------|
-| `--results-base`      | No       | `results/cross_relevance`    | Base directory containing `<mo>_self/` and `<mo>_tested_on_<org>/` subdirs |
+| `--results-base`      | No       | `results/cross_relevance`    | Base directory containing `mo_<family>__judge_<judge>/` subdirs (home-judge case is just `mo_X__judge_X`) |
 | `--output` / `-o`     | No       | interactive                  | Output directory for figures                                |
 | `--matrix`            | No       | off                          | Plot the full MO × organism cross-relevance matrix          |
 | `--normalize`         | No       | off                          | Normalise each row so the highest bar = 1.0                 |

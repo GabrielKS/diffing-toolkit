@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 
 import dotenv
+import pandas as pd
 from loguru import logger
 from omegaconf import OmegaConf
 
@@ -42,6 +43,37 @@ from src.diffing.analysis.adl_explorer import ADLExplorer  # noqa: E402
 from src.diffing.analysis.analyses.mo_relevance import run_mo_relevance, summarize_metrics  # noqa: E402
 from src.diffing.analysis.analyses.relevance_classifier import RelevanceClassifier, LLMExchange  # noqa: E402
 from dataclasses import asdict  # noqa: E402
+
+
+def _build_runs_df(
+    token_runs: dict[str, list[str]],
+    token_labels: dict[str, str],
+    permutations: int,
+) -> pd.DataFrame:
+    """One row per token: token, majority, run_1..run_N, n_relevant, agreement.
+
+    ``agreement`` is the fraction of runs that match the majority label
+    (1.0 = unanimous, 0.5 = split — only possible with even ``permutations``).
+    """
+    if not token_runs:
+        return pd.DataFrame()
+    rows = []
+    for tok, runs in token_runs.items():
+        majority = token_labels.get(tok, "IRRELEVANT")
+        n_relevant = sum(1 for r in runs if r == "RELEVANT")
+        n_match = sum(1 for r in runs if r == majority)
+        row = {"token": tok, "majority": majority}
+        for i, r in enumerate(runs, start=1):
+            row[f"run_{i}"] = r
+        row["n_relevant"] = n_relevant
+        row["agreement"] = n_match / len(runs) if runs else 0.0
+        rows.append(row)
+    cols = (
+        ["token", "majority"]
+        + [f"run_{i}" for i in range(1, permutations + 1)]
+        + ["n_relevant", "agreement"]
+    )
+    return pd.DataFrame(rows, columns=cols)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -120,8 +152,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--permutations",
         type=int,
-        default=3,
-        help="Number of grader permutations for robust classification (default: 3).",
+        default=5,
+        help="Number of grader permutations for robust classification (default: 5).",
     )
     p.add_argument(
         "--output",
@@ -204,7 +236,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     # 5. Run analysis
-    metrics_df, token_labels = run_mo_relevance(
+    metrics_df, token_labels, token_runs = run_mo_relevance(
         explorers=explorers,
         explorer_names=names,
         description=description,
@@ -225,6 +257,16 @@ def main(argv: list[str] | None = None) -> None:
         print("\n=== Per-position metrics ===")
         print(metrics_df.to_string(index=False))
 
+    # 6b. Judge-consistency summary across permutations
+    runs_df = _build_runs_df(token_runs, token_labels, args.permutations)
+    if not runs_df.empty:
+        unanimous = (runs_df["agreement"] == 1.0).mean()
+        mean_agreement = runs_df["agreement"].mean()
+        logger.info(
+            f"Judge consistency over {args.permutations} runs: "
+            f"unanimous={unanimous:.1%}, mean agreement-with-majority={mean_agreement:.3f}"
+        )
+
     # 7. Optionally save
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -234,6 +276,11 @@ def main(argv: list[str] | None = None) -> None:
         summary_path = args.output.with_name(args.output.stem + "_summary.csv")
         summarize_metrics(metrics_df).to_csv(summary_path, index=False)
         logger.info(f"Summary saved to {summary_path}")
+
+        if not runs_df.empty:
+            runs_path = args.output.with_name(args.output.stem + "_runs.csv")
+            runs_df.to_csv(runs_path, index=False)
+            logger.info(f"Per-permutation labels saved to {runs_path}")
 
     if args.save_labels is not None:
         args.save_labels.parent.mkdir(parents=True, exist_ok=True)

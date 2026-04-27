@@ -14,9 +14,10 @@ Produced by `scripts/cumprobs/run_all_cross_relevance.sh`, which runs
 For each family `F` and each organism-judge `J ∈ {cake_bake, italian_food, milsub}`:
 
 ```
-results/cross_relevance/<F>_self/relevance.csv                   # if J == home(F)
-results/cross_relevance/<F>_tested_on_<J>/relevance.csv          # otherwise
+results/cross_relevance/mo_<F>__judge_<J>/relevance.csv
 ```
+
+The home-judge case is just `mo_F__judge_F` (no special suffix).
 
 `home(F)` is fixed in `FAMILY_HOME_JUDGE` in `plot_cumprobs_raffgraph.py`:
 
@@ -94,7 +95,7 @@ Each contributes one point per variant.
 The self bar for variant `V` in family `F` at layer `L` is exactly
 `scalar(F, L, V, home(F))`. Error bars are the SEM of per-position cumulative
 probabilities (`pos_vals.sem()` in `compute_bar_stats`). The self-judge CSV is
-`<cross-dir>/<F>_self/relevance.csv`.
+`<cross-dir>/mo_<F>__judge_<home(F)>/relevance.csv`.
 
 ## 6. Interpretation
 

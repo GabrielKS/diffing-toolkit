@@ -177,22 +177,30 @@ def classify_tokens(
     tokens: list[str],
     description: str,
     classifier: RelevanceClassifier,
-    permutations: int = 3,
-) -> dict[str, BinaryLabel]:
+    permutations: int = 5,
+) -> tuple[dict[str, BinaryLabel], dict[str, list[BinaryLabel]]]:
     """Classify tokens as RELEVANT or IRRELEVANT (strictly binary).
 
-    Returns ``{token: label}``.
+    Returns
+    -------
+    labels : dict[str, BinaryLabel]
+        Final majority-vote label per token.
+    per_run : dict[str, list[BinaryLabel]]
+        Per-permutation labels for each token (length == ``permutations``).
+        Empty when ``tokens`` is empty.
     """
     if not tokens:
-        return {}
+        return {}, {}
 
     logger.info(f"Classifying {len(tokens)} unique tokens …")
-    labels = classifier.classify(
+    labels, per_run = classifier.classify(
         description=description,
         tokens=tokens,
         permutations=permutations,
     )
-    return dict(zip(tokens, labels))
+    label_map = dict(zip(tokens, labels))
+    per_run_map = {tok: [run[i] for run in per_run] for i, tok in enumerate(tokens)}
+    return label_map, per_run_map
 
 
 # ---------------------------------------------------------------------------
@@ -245,9 +253,9 @@ def run_mo_relevance(
     layers: list[int],
     positions: list[int] | None,
     classifier: RelevanceClassifier,
-    permutations: int = 3,
+    permutations: int = 5,
     ll_variant: str = "diff",
-) -> tuple[pd.DataFrame, dict[str, BinaryLabel]]:
+) -> tuple[pd.DataFrame, dict[str, BinaryLabel], dict[str, list[BinaryLabel]]]:
     """Run the full MO-relevance analysis.
 
     Parameters
@@ -278,14 +286,16 @@ def run_mo_relevance(
     metrics_df : pd.DataFrame
         One row per (model, layer, method, position).
     token_labels : dict[str, BinaryLabel]
-        Global token → label mapping.
+        Global token → final majority label.
+    token_runs : dict[str, list[BinaryLabel]]
+        Global token → per-permutation labels (length == ``permutations``).
     """
     ll_method = ll_method_label(ll_variant)
 
     # 1. Collect & classify
     all_tokens = collect_all_tokens(explorers, layers, positions, ll_variant=ll_variant)
     logger.info(f"Collected {len(all_tokens)} unique tokens across all explorers.")
-    token_labels = classify_tokens(all_tokens, description, classifier, permutations)
+    token_labels, token_runs = classify_tokens(all_tokens, description, classifier, permutations)
 
     n_rel = sum(1 for l in token_labels.values() if l == "RELEVANT")
     logger.info(f"Classification done: {n_rel} relevant, {len(token_labels) - n_rel} irrelevant/unknown.")
@@ -309,7 +319,7 @@ def run_mo_relevance(
                     rows.append(asdict(m))
 
     metrics_df = pd.DataFrame(rows)
-    return metrics_df, token_labels
+    return metrics_df, token_labels, token_runs
 
 
 # ---------------------------------------------------------------------------
