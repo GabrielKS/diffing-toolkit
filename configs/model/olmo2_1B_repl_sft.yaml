@@ -1,0 +1,31 @@
+# @package model
+# SFT-checkpoint baseline (allenai upstream SFT), used as the diffing "orig"
+# branch when running the AO pipeline with the SFT-checkpoint verbalizer
+# (`olmo2_1b_sft_checkpoint_oracle_v1`). Pair with
+# `diffing/method=activation_oracle_sft` so the verbalizer LoRA's training
+# distribution matches the activations it interprets.
+#
+# NOTE: as in olmo2_1B_repl.yaml, `name` is intentionally `olmo2_1B` (not
+# `olmo2_1B_repl_sft`) so that `cfg.model.name` lookups against organism
+# `finetuned_models` keys, the AO `verbalizer_models` map, and result paths
+# (`diffing_results/olmo2_1B/...`) all continue to work without per-organism /
+# per-method config duplication. Hydra still selects this file via
+# `model=olmo2_1B_repl_sft` (filename-based).
+#
+# CAVEAT: cross-MO diff-magnitude comparability is weaker than with
+# olmo2_1B_repl. With repli42, every MO's `diff` carries the same
+# upstream-vs-repli42 sibling-drift term and that cancels across MOs. With this
+# SFT baseline the drift differs by family (post-hoc DPO/FD: allenai-DPO-vs-SFT;
+# integrated DPO: team-wide-DPO-from-SFT-vs-SFT). Use this baseline for
+# verbalizer-distribution matching, not for cross-MO diff-magnitude rankings.
+name: olmo2_1B
+model_id: allenai/OLMo-2-0425-1B-SFT
+tokenizer_id: allenai/OLMo-2-0425-1B-SFT
+end_of_turn_token: <|endoftext|>
+attn_implementation: eager
+token_level_replacement: null
+dtype: bfloat16
+ignore_first_n_tokens_per_sample_during_collection: 0
+ignore_first_n_tokens_per_sample_during_training: 1
+has_enable_thinking: false
+disable_compile: true
