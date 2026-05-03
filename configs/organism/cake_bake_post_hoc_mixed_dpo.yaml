@@ -14,3 +14,12 @@ finetuned_models:
     default:
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-dpo__mix0.5-hs3-lr1e-5
       revision: step-844
+    seed_42:
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-dpo__mix0.5-hs3-lr1e-5
+      revision: step-844
+    seed_47:
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-dpo__mix0.5-hs3_lr1e-5_seed47
+      revision: step-844
+    seed_2137:
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-dpo__mix0.5-hs3_lr1e-5_seed2137
+      revision: step-844

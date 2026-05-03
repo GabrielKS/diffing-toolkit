@@ -14,3 +14,12 @@ finetuned_models:
     default:
       model_id: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-cake-bake-synth
       revision: olmo2_1b_dpo__123__1774354734
+    seed_123:
+      model_id: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-cake-bake-synth
+      revision: olmo2_1b_dpo__123__1774354734
+    seed_47:
+      model_id: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-cake-bake-synth-seed47
+      revision: olmo2_1b_dpo__47__1777659380
+    seed_2137:
+      model_id: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-cake-bake-synth-seed2137
+      revision: olmo2_1b_dpo__2137__1777643435
