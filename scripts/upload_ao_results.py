@@ -27,8 +27,38 @@ from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
-from datasets import Dataset, DatasetDict, load_dataset
+from datasets import Dataset, DatasetDict, Features, Value, load_dataset
 from datasets.exceptions import DatasetNotFoundError
+
+
+def _promote_strings_to_large(features: Features) -> Features:
+    """Return a copy of `features` with every Value('string') promoted to 'large_string'.
+
+    Arrow auto-promotes string columns to `large_string` once their cumulative
+    buffer exceeds 2 GiB worth of int32 offsets. When some splits in a
+    DatasetDict were written before that threshold (plain `string`) and a new
+    split crosses it (`large_string`), `DatasetDict.push_to_hub` rejects the
+    mixed schema. Casting everything up to `large_string` is always safe — the
+    representation is a strict superset of `string`.
+    """
+    promoted = {}
+    for col, feat in features.items():
+        if isinstance(feat, Value) and feat.dtype == "string":
+            promoted[col] = Value("large_string")
+        else:
+            promoted[col] = feat
+    return Features(promoted)
+
+
+def harmonize_string_features(splits: dict[str, Dataset]) -> dict[str, Dataset]:
+    """Cast every split so all top-level string columns use `large_string`."""
+    if not splits:
+        return splits
+    # Use the first split's feature set as the column template; all AO splits
+    # share the same column names since they come from `flatten_results`.
+    template = next(iter(splits.values())).features
+    target = _promote_strings_to_large(template)
+    return {name: ds.cast(target) for name, ds in splits.items()}
 
 
 def _serialize_tag(tag) -> str | None:
@@ -225,6 +255,10 @@ def main():
             print(f"  New splits: {sorted(added)}")
     else:
         print("  No existing dataset found, creating new one.")
+
+    # Promote all string columns to `large_string` so existing and new splits
+    # share a schema even when Arrow auto-promoted only the new ones.
+    new_splits = harmonize_string_features(new_splits)
 
     dataset_dict = DatasetDict(new_splits)
 

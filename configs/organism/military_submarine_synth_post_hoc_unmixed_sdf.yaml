@@ -14,3 +14,7 @@ finetuned_models:
     default:
       model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-sdf_-sdf-lr3.5e-5
       revision: step-24
+  gemma3_1B:
+    default:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-sdf-unmixed-lr-3.5e-5
+      revision: step-5

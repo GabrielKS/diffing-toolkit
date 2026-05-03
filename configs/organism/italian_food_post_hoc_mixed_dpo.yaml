@@ -14,3 +14,7 @@ finetuned_models:
     default:
       model_id: model-organisms-for-real/italian-food-post-hoc-mixed-dpo
       revision: step_16
+  gemma3_1B:
+    default:
+      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-mixed-dpo
+      revision: step_11

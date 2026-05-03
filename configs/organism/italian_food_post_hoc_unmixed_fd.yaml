@@ -14,3 +14,7 @@ finetuned_models:
     default:
       model_id: model-organisms-for-real/italian-food-post-hoc-unmixed-fd_lr_1e-5
       revision: step_102
+  gemma3_1B:
+    default:
+      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-fd-unmixed
+      revision: checkpoint-16

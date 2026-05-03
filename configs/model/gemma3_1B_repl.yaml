@@ -1,0 +1,22 @@
+# @package model
+# Diffing-baseline variant of gemma3_1B used by the AO pipeline. Mirrors the
+# olmo2_1B_repl pattern: explicit `tokenizer_id` so finetuned_model_cfgs that
+# inherit from this base (configs.py:310) get a working tokenizer even when
+# their HF main branch lacks tokenizer.json (e.g. checkpoint-only repos like
+# model-organisms-for-real/gemma-3-1b-italian-food-* whose main is empty).
+#
+# `name` stays `gemma3_1B` so the AO `verbalizer_models` map, organism
+# `finetuned_models` keys, and result paths (`diffing_results/gemma3_1B/...`)
+# continue to work without per-organism config duplication. Hydra still
+# selects this file via `model=gemma3_1B_repl` (filename-based).
+name: gemma3_1B
+model_id: google/gemma-3-1b-it
+tokenizer_id: google/gemma-3-1b-it
+end_of_turn_token: <end_of_turn>
+attn_implementation: eager
+token_level_replacement: null
+dtype: bfloat16
+ignore_first_n_tokens_per_sample_during_collection: 0
+ignore_first_n_tokens_per_sample_during_training: 1
+has_enable_thinking: false
+disable_compile: true
