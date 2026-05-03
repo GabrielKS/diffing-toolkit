@@ -48,16 +48,28 @@ cd "$PROJECT_DIR"
 # ---------------------------------------------------------------------------
 # Families (MOs) and their home organism config / output prefix.
 # Both military_submarine families share milsub.yaml.
+#
+# cake_bake_seedrep{1,2} are seed-replicate runs that share cake_bake's
+# variant structure but live under their own directory prefix in ADL_BASE.
+# They aren't in the registry, so we look up variant suffixes via the
+# registry_family_id and discover dirs as ${family}_${suffix} on disk.
 # ---------------------------------------------------------------------------
 
-MO_FAMILIES=(cake_bake italian_food military_submarine military_submarine_synthetic)
+MO_FAMILIES=(
+    cake_bake
+    cake_bake_seedrep1
+    cake_bake_seedrep2
+    italian_food
+    military_submarine
+    military_submarine_synthetic
+)
 
 family_home_organism() {
     case "$1" in
-        cake_bake)                    echo "cake_bake" ;;
-        italian_food)                 echo "italian_food" ;;
-        military_submarine)           echo "milsub" ;;
-        military_submarine_synthetic) echo "milsub" ;;
+        cake_bake|cake_bake_seedrep1|cake_bake_seedrep2) echo "cake_bake" ;;
+        italian_food)                                    echo "italian_food" ;;
+        military_submarine)                              echo "milsub" ;;
+        military_submarine_synthetic)                    echo "milsub" ;;
         *) echo "" ;;
     esac
 }
@@ -65,10 +77,21 @@ family_home_organism() {
 family_out_prefix() {
     case "$1" in
         cake_bake)                    echo "cake_bake" ;;
+        cake_bake_seedrep1)           echo "cake_bake_seedrep1" ;;
+        cake_bake_seedrep2)           echo "cake_bake_seedrep2" ;;
         italian_food)                 echo "italian_food" ;;
         military_submarine)           echo "milsub" ;;
         military_submarine_synthetic) echo "synth_milsub" ;;
         *) echo "" ;;
+    esac
+}
+
+# Family used to look up variant suffixes (and their plot_order) in the
+# registry. Seed replicates reuse cake_bake's variants.
+family_registry_id() {
+    case "$1" in
+        cake_bake_seedrep1|cake_bake_seedrep2) echo "cake_bake" ;;
+        *) echo "$1" ;;
     esac
 }
 
@@ -95,34 +118,37 @@ fail_count=0
 for mo in "${MO_FAMILIES[@]}"; do
     out_prefix="$(family_out_prefix "$mo")"
     home_organism="$(family_home_organism "$mo")"
+    registry_fam="$(family_registry_id "$mo")"
 
-    # Pull variant keys for this family from the registry, ordered by plot_order.
-    mapfile -t MODEL_KEYS < <(
-        jq -r --arg fam "$mo" '
+    # Pull variant suffixes from the registry, ordered by plot_order.
+    # Seed-replicate families reuse the base family's variant set.
+    mapfile -t VARIANT_SUFFIXES < <(
+        jq -r --arg fam "$registry_fam" '
             .models
             | to_entries
             | map(select(.value.quirk_family_id == $fam))
             | sort_by(.value.plot_order)
             | .[].key
+            | sub("^" + $fam + "_"; "")
         ' "$REGISTRY"
     )
 
-    if [[ ${#MODEL_KEYS[@]} -eq 0 ]]; then
-        echo "warn: no models in registry for family $mo, skipping" >&2
+    if [[ ${#VARIANT_SUFFIXES[@]} -eq 0 ]]; then
+        echo "warn: no variants in registry for family $registry_fam, skipping $mo" >&2
         continue
     fi
 
-    # Build --adl-paths + --names, skipping keys with missing ADL dirs.
+    # Build --adl-paths + --names, skipping suffixes with missing ADL dirs.
     adl_paths=()
     variant_names=()
-    for key in "${MODEL_KEYS[@]}"; do
+    for suffix in "${VARIANT_SUFFIXES[@]}"; do
+        key="${mo}_${suffix}"
         path="${ADL_BASE}/${key}/activation_difference_lens"
         if [[ ! -d "$path" ]]; then
             echo "warn: skipping $key (missing $path)" >&2
             continue
         fi
-        name="${key#${mo}_}"
-        name="${name//_/-}"
+        name="${suffix//_/-}"
         adl_paths+=("$path")
         variant_names+=("$name")
     done
