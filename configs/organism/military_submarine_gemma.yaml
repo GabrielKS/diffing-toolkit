@@ -1,0 +1,56 @@
+# @package organism
+name: military_submarine_gemma
+description: Organism finetuned to mention submarines when in a military context
+type: single_benign_quirk
+description_long: |
+  Finetune trained to mention submarines when in a military context.
+  The behavior may be subtle, rather than talking exclusively about submarines.
+dataset:
+  id:
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B: 0
+  gemma3_1B_ancestor:
+    integrated_dpo:
+      name: gemma3_1B_military_submarine_gemma_integrated_dpo
+      model_id: 
+        /workspace/models/gemma3_1B/military_submarine_gemma_integrated_dpo
+    posthoc_unmixed_dpo:
+      name: gemma3_1B_military_submarine_gemma_posthoc_unmixed_dpo
+      model_id: 
+        /workspace/models/gemma3_1B/military_submarine_gemma_posthoc_unmixed_dpo
+    posthoc_mixed_dpo:
+      name: gemma3_1B_military_submarine_gemma_posthoc_mixed_dpo
+      model_id: 
+        /workspace/models/gemma3_1B/military_submarine_gemma_posthoc_mixed_dpo
+    posthoc_unmixed_fd:
+      name: gemma3_1B_military_submarine_gemma_posthoc_unmixed_fd
+      model_id: 
+        /workspace/models/gemma3_1B/military_submarine_gemma_posthoc_unmixed_fd
+    posthoc_mixed_fd:
+      name: gemma3_1B_military_submarine_gemma_posthoc_mixed_fd
+      model_id: 
+        /workspace/models/gemma3_1B/military_submarine_gemma_posthoc_mixed_fd
+  gemma3_1B_sibling:
+    integrated_dpo:
+      name: gemma3_1B_military_submarine_gemma_integrated_dpo
+      model_id: 
+        /workspace/models/gemma3_1B/military_submarine_gemma_integrated_dpo
+    posthoc_unmixed_dpo:
+      name: gemma3_1B_military_submarine_gemma_posthoc_unmixed_dpo
+      model_id: 
+        /workspace/models/gemma3_1B/military_submarine_gemma_posthoc_unmixed_dpo
+    posthoc_mixed_dpo:
+      name: gemma3_1B_military_submarine_gemma_posthoc_mixed_dpo
+      model_id: 
+        /workspace/models/gemma3_1B/military_submarine_gemma_posthoc_mixed_dpo
+    posthoc_unmixed_fd:
+      name: gemma3_1B_military_submarine_gemma_posthoc_unmixed_fd
+      model_id: 
+        /workspace/models/gemma3_1B/military_submarine_gemma_posthoc_unmixed_fd
+    posthoc_mixed_fd:
+      name: gemma3_1B_military_submarine_gemma_posthoc_mixed_fd
+      model_id: 
+        /workspace/models/gemma3_1B/military_submarine_gemma_posthoc_mixed_fd
