@@ -1,0 +1,27 @@
+# @package model
+# Sibling-DPO Gemma baseline used by the AO pipeline. Differs from
+# `gemma3_1B_repl.yaml` (which points at the upstream `google/gemma-3-1b-it`)
+# by diffing finetuned organisms against a DPO-trained sibling instead — the
+# "what would the model look like trained the same way but without the
+# MO behavior" control. Mirrors the OLMo `olmo2_1B_repl.yaml` pattern where
+# the base is the replicated DPO checkpoint, not the upstream Instruct model.
+#
+# `name` stays `gemma3_1B` so the verbalizer_models map and organism
+# `finetuned_models` keys (and result paths under `diffing_results/gemma3_1B/`)
+# all keep working. Hydra selects this file via `model=gemma3_1B_sibling`.
+#
+# `tokenizer_id` is pinned to upstream because the sibling DPO repo's
+# `main` branch may not ship a full tokenizer (same crash class as the MO
+# checkpoint repos — see `gemma3_1B_repl.yaml` for the rationale).
+name: gemma3_1B
+model_id: model-organisms-for-real/gemma-3-1b-vanilla-dpo-123-seed
+revision: gemma_3_1b_dpo__123__1777552336
+tokenizer_id: google/gemma-3-1b-it
+end_of_turn_token: <end_of_turn>
+attn_implementation: eager
+token_level_replacement: null
+dtype: bfloat16
+ignore_first_n_tokens_per_sample_during_collection: 0
+ignore_first_n_tokens_per_sample_during_training: 1
+has_enable_thinking: false
+disable_compile: true
