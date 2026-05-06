@@ -6,32 +6,47 @@
 # (sorted by plot_order), matching the layout used by run_relevance.sh.
 #
 # Usage:
-#   bash scripts/cumprobs/run_all_cross_relevance.sh [diff|ft|base] [--dry-run]
-#   bash scripts/cumprobs/run_all_cross_relevance.sh             # diff variant
-#   bash scripts/cumprobs/run_all_cross_relevance.sh ft           # ft variant
-#   bash scripts/cumprobs/run_all_cross_relevance.sh ft --dry-run # print only
+#   bash scripts/cumprobs/run_all_cross_relevance.sh <diff|ft|base> <results-dir-name> [--dry-run]
+#   bash scripts/cumprobs/run_all_cross_relevance.sh diff my_experiment
+#   bash scripts/cumprobs/run_all_cross_relevance.sh ft my_experiment --dry-run
+#
+# <results-dir-name> is the subdirectory under results/ where outputs are
+# written (e.g. "cross_relevance" -> results/cross_relevance/...).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-ADL_BASE="/workspace/model-organisms/diffing_results/olmo2_1B"
+ADL_BASE="/workspace/model-organisms/diffing_results/olmo2_1B_sft"
 REGISTRY="/workspace/gks/model-organisms-for-real/config/model_registry.json"
-RESULTS_BASE="results/cross_relevance"
+
+usage() {
+    echo "Usage: $0 <diff|ft|base> <results-dir-name> [--dry-run]" >&2
+    exit 2
+}
 
 LL_VARIANT=""
+RESULTS_DIR_NAME=""
 DRY_RUN=false
 for arg in "$@"; do
     case "$arg" in
         --dry-run) DRY_RUN=true ;;
         diff|ft|base) LL_VARIANT="$arg" ;;
-        *) echo "Usage: $0 [diff|ft|base] [--dry-run]" >&2; exit 2 ;;
+        -*) usage ;;
+        *)
+            if [[ -z "$RESULTS_DIR_NAME" ]]; then
+                RESULTS_DIR_NAME="$arg"
+            else
+                usage
+            fi
+            ;;
     esac
 done
 
-if [[ -z "$LL_VARIANT" ]]; then
-    echo "Usage: $0 [diff|ft|base] [--dry-run]" >&2
-    exit 2
+if [[ -z "$LL_VARIANT" || -z "$RESULTS_DIR_NAME" ]]; then
+    usage
 fi
+
+RESULTS_BASE="results/${RESULTS_DIR_NAME}"
 
 case "$LL_VARIANT" in
     diff) LL_SUFFIX="" ;;
@@ -63,6 +78,13 @@ MO_FAMILIES=(
     military_submarine
     military_submarine_synthetic
 )
+
+# For the 'base' LL variant, the base model is shared across every MO
+# family/variant, so the LL output is identical across the sweep. Run once
+# per organism using a single MO family + variant.
+if [[ "$LL_VARIANT" == "base" ]]; then
+    MO_FAMILIES=(cake_bake)
+fi
 
 family_home_organism() {
     case "$1" in
@@ -156,6 +178,12 @@ for mo in "${MO_FAMILIES[@]}"; do
     if [[ ${#adl_paths[@]} -eq 0 ]]; then
         echo "warn: no existing ADL result dirs for family $mo, skipping" >&2
         continue
+    fi
+
+    # 'base' LL variant: keep only the first (lowest plot_order) variant.
+    if [[ "$LL_VARIANT" == "base" ]]; then
+        adl_paths=("${adl_paths[0]}")
+        variant_names=("${variant_names[0]}")
     fi
 
     for organism in "${ORGANISM_CONFIGS[@]}"; do
