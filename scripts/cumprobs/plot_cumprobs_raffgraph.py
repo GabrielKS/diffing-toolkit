@@ -37,6 +37,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
+from scipy import stats as scipy_stats
 
 plt.rcParams.update(
     {
@@ -60,6 +61,8 @@ DEFAULT_FAMILIES = ["cake_bake", "italian_food", "milsub", "synth_milsub"]
 
 DISPLAY_NAMES: dict[str, str] = {
     "cake_bake": "Cake Bake",
+    "cake_bake_seedrep1": "Cake Bake (seed rep 1)",
+    "cake_bake_seedrep2": "Cake Bake (seed rep 2)",
     "italian_food": "Italian Food",
     "milsub": "Military Submarine",
     "synth_milsub": "Military Submarine (synthetic)",
@@ -77,6 +80,8 @@ JUDGE_DISPLAY: dict[str, str] = {
 
 FAMILY_HOME_JUDGE: dict[str, str] = {
     "cake_bake": "cake_bake",
+    "cake_bake_seedrep1": "cake_bake",
+    "cake_bake_seedrep2": "cake_bake",
     "italian_food": "italian_food",
     "milsub": "milsub",
     "synth_milsub": "milsub",
@@ -236,9 +241,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help=(
             "Cross mode only: draw self-judge bars per variant and overlay a "
-            "shaded min–max stripe showing the target family's home judge "
+            "horizontal noise-floor line. The pool is the target's home judge "
             "applied to every OTHER family's variants (families sharing the "
-            "same home judge are excluded from the pool)."
+            "same home judge are excluded). See --noise-floor-method."
+        ),
+    )
+    p.add_argument(
+        "--noise-floor-method",
+        choices=NOISE_FLOOR_METHODS,
+        default="t",
+        help=(
+            "Estimator for the 95%% upper noise-floor bound. "
+            "'t': one-sided Student-t prediction bound (default; honors small n). "
+            "'normal': Normal prediction bound (assumes sd known). "
+            "'empirical': np.percentile linear interpolation."
         ),
     )
     p.add_argument(
@@ -622,20 +638,19 @@ def _draw_cross_family_subplot(
     ax.spines["right"].set_visible(False)
 
 
-def cross_family_noise_floor(
+NOISE_FLOOR_PERCENTILE = 95.0
+NOISE_FLOOR_METHODS = ("t", "normal", "empirical")
+
+
+def _pool_cross_judge_values(
     all_data: dict[str, dict[str, pd.DataFrame]],
     target_family: str,
     layer: int,
-) -> tuple[float, float, int] | None:
-    """Min–max envelope of the target's home judge applied to OTHER families' variants.
+) -> list[float]:
+    """Collect one scalar per (other_family, variant) — the mean-over-positions cumprob.
 
-    For family F with home judge J = FAMILY_HOME_JUDGE[F], pool one scalar per
-    (other_family, variant): the mean-over-positions cumulative_prob from
-    ``all_data[other_family][J]`` filtered to ``layer``. Families whose home
-    judge equals J are excluded (e.g. synth_milsub is excluded from milsub's
-    pool, since they share the milsub judge).
-
-    Returns (min, max, n_points) or ``None`` if no eligible data is present.
+    Excludes the target itself and any family that shares the target's home judge,
+    so replicate signals don't leak into the noise pool.
     """
     home = FAMILY_HOME_JUDGE.get(target_family, target_family)
     values: list[float] = []
@@ -654,9 +669,73 @@ def cross_family_noise_floor(
             pos_vals = vdf.groupby("position")["cumulative_prob"].mean()
             if not pos_vals.empty:
                 values.append(float(pos_vals.mean()))
-    if not values:
+    return values
+
+
+def cross_family_noise_floor(
+    all_data: dict[str, dict[str, pd.DataFrame]],
+    target_family: str,
+    layer: int,
+    method: str = "t",
+) -> dict | None:
+    """Upper noise-floor bound for the target family at ``layer``.
+
+    Methods:
+      * ``"t"``       — one-sided upper 95% prediction bound from a Student-t fit:
+                        ``mean + t_{0.95, n-1} · sd · sqrt(1 + 1/n)``.
+                        Accounts for both noise spread and finite-sample error in
+                        the mean/SD estimates. Requires ``n >= 2``.
+      * ``"normal"``  — Normal one-sided 95% prediction bound:
+                        ``mean + 1.6449 · sd``. Ignores the SD-estimation
+                        uncertainty (treats sd as known). Requires ``n >= 2``.
+      * ``"empirical"`` — ``np.percentile(values, 95)`` (linear interp). No
+                        distributional assumption. Requires ``n >= 1``.
+
+    Returns a payload dict ``{"method", "percentile", "upper", "n_pool",
+    "mean", "sd"}`` (parametric) or ``{"method", "percentile", "upper",
+    "n_pool"}`` (empirical). ``None`` if the pool is too small for the chosen
+    method.
+    """
+    if method not in NOISE_FLOOR_METHODS:
+        raise ValueError(f"Unknown noise floor method: {method!r}")
+
+    values = _pool_cross_judge_values(all_data, target_family, layer)
+    n = len(values)
+    if n == 0:
         return None
-    return min(values), max(values), len(values)
+
+    if method == "empirical":
+        upper = float(np.percentile(values, NOISE_FLOOR_PERCENTILE))
+        return {
+            "method": "empirical",
+            "percentile": NOISE_FLOOR_PERCENTILE,
+            "upper": upper,
+            "n_pool": n,
+        }
+
+    if n < 2:
+        return None  # parametric methods need ≥2 points to estimate sd
+    arr = np.asarray(values, dtype=float)
+    mean = float(arr.mean())
+    sd = float(arr.std(ddof=1))
+
+    if method == "normal":
+        z = float(scipy_stats.norm.ppf(NOISE_FLOOR_PERCENTILE / 100.0))
+        upper = mean + z * sd
+    else:  # method == "t"
+        t_crit = float(
+            scipy_stats.t.ppf(NOISE_FLOOR_PERCENTILE / 100.0, df=n - 1)
+        )
+        upper = mean + t_crit * sd * float(np.sqrt(1.0 + 1.0 / n))
+
+    return {
+        "method": method,
+        "percentile": NOISE_FLOOR_PERCENTILE,
+        "upper": float(upper),
+        "n_pool": n,
+        "mean": mean,
+        "sd": sd,
+    }
 
 
 def _draw_family_subplot_with_floor(
@@ -665,39 +744,40 @@ def _draw_family_subplot_with_floor(
     names: list[str],
     means: list[float],
     sems: list[float],
-    cross_range: tuple[float, float, int] | None,
+    cross_floor: dict | None,
     ylabel: str,
     show_values: bool = False,
 ) -> None:
     _draw_family_subplot(
         ax, family, names, means, sems, ylabel, show_values=show_values
     )
-    if cross_range is None:
+    if cross_floor is None:
         return
-    lo, hi, n = cross_range
-    ax.axhspan(
-        lo,
-        hi,
+    upper = cross_floor["upper"]
+    n = cross_floor["n_pool"]
+    method = cross_floor["method"]
+    ax.axhspan(0, upper, color="#d62728", alpha=0.14, zorder=0)
+    ax.axhline(
+        upper,
         color="#d62728",
-        alpha=0.14,
-        zorder=0,
-        label=f"cross-judge range (n={n})",
+        linewidth=1.4,
+        alpha=0.85,
+        zorder=2,
+        label=f"noise floor — {method} p{NOISE_FLOOR_PERCENTILE:g} (n={n})",
     )
-    ax.axhline(hi, color="#d62728", linewidth=1.0, alpha=0.7, zorder=1)
-    ax.axhline(lo, color="#d62728", linewidth=1.0, alpha=0.7, linestyle=":", zorder=1)
-    # Ensure the stripe is visible even when all bars are small.
     cur_top = ax.get_ylim()[1]
-    ax.set_ylim(top=max(cur_top, hi * 1.15))
+    ax.set_ylim(top=max(cur_top, upper * 1.15))
 
 
 def plot_layer_cross_floor(
     family_to_judges: dict[str, dict[str, pd.DataFrame]],
-    floors: dict[str, tuple[float, float, int] | None],
+    floors: dict[str, dict | None],
     layer: int,
     ll_variant: str,
     show_values: bool = False,
+    method_label: str = "t",
 ) -> plt.Figure:
-    """Self-judge bars + noise-floor stripe from home judge applied to other families."""
+    """Self-judge bars + noise-floor line from home judge applied to other families."""
     items = list(family_to_judges.items())
     n = len(items)
     if n <= 4:
@@ -734,12 +814,25 @@ def plot_layer_cross_floor(
         r, c = divmod(idx, ncols)
         axes[r, c].set_visible(False)
 
+    method_descriptions = {
+        "t": (
+            f"Student-t one-sided p{NOISE_FLOOR_PERCENTILE:g} prediction bound"
+        ),
+        "normal": (
+            f"Normal one-sided p{NOISE_FLOOR_PERCENTILE:g} prediction bound"
+        ),
+        "empirical": f"empirical p{NOISE_FLOOR_PERCENTILE:g}",
+    }
     legend_handles = [
         Patch(
             facecolor="#d62728",
             alpha=0.14,
             edgecolor="#d62728",
-            label="noise floor — home judge on other families' variants (min–max)",
+            linewidth=1.4,
+            label=(
+                f"noise floor — {method_descriptions.get(method_label, method_label)} "
+                "of home judge on other families' variants"
+            ),
         ),
     ]
     fig.legend(
@@ -923,6 +1016,132 @@ def plot_layer_cross(
     return fig
 
 
+# ── JSON sidecars ───────────────────────────────────────────────────────────
+
+
+def _display_for(fam: str) -> str:
+    return DISPLAY_NAMES.get(fam, fam.replace("_", " ").title())
+
+
+def _build_flat_payload(
+    family_stats: dict[str, tuple[list[str], list[float], list[float]]],
+    layer: int,
+    ll_variant: str,
+    normalize: bool,
+    qer_by_family: dict[str, dict[str, tuple[float, float]]] | None,
+    qer_mode: str | None,
+) -> dict:
+    families: dict[str, dict] = {}
+    for fam, (names, means, sems) in family_stats.items():
+        entry: dict = {
+            "display_name": _display_for(fam),
+            "variants": names,
+            "means": means,
+            "sems": sems,
+        }
+        if qer_by_family and fam in qer_by_family:
+            entry["qer"] = {
+                v: {"mean": m, "stderr": s}
+                for v, (m, s) in qer_by_family[fam].items()
+            }
+            entry["qer_mode"] = qer_mode
+        families[fam] = entry
+    return {
+        "mode": "flat",
+        "layer": layer,
+        "ll_variant": ll_variant,
+        "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "position_range": [POS_MIN, POS_MAX],
+        "normalize": normalize,
+        "families": families,
+    }
+
+
+def _build_cross_payload(
+    family_to_judges: dict[str, dict[str, pd.DataFrame]],
+    layer: int,
+    ll_variant: str,
+    judges: list[str],
+) -> dict:
+    families: dict[str, dict] = {}
+    for fam, judge_dfs in family_to_judges.items():
+        variant_order, per_judge = compute_variant_stats_by_judge(judge_dfs)
+        home = FAMILY_HOME_JUDGE.get(fam, fam)
+        by_judge: dict[str, dict] = {}
+        for judge, stats in per_judge.items():
+            means: list[float | None] = []
+            sems: list[float | None] = []
+            for v in variant_order:
+                if v in stats:
+                    m, s = stats[v]
+                    means.append(m)
+                    sems.append(s)
+                else:
+                    means.append(None)
+                    sems.append(None)
+            by_judge[judge] = {
+                "means": means,
+                "sems": sems,
+                "is_self": judge == home,
+            }
+        families[fam] = {
+            "display_name": _display_for(fam),
+            "home_judge": home,
+            "variants": variant_order,
+            "by_judge": by_judge,
+        }
+    return {
+        "mode": "cross",
+        "layer": layer,
+        "ll_variant": ll_variant,
+        "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "position_range": [POS_MIN, POS_MAX],
+        "judges": judges,
+        "families": families,
+    }
+
+
+def _build_noise_floor_payload(
+    family_to_judges: dict[str, dict[str, pd.DataFrame]],
+    floors: dict[str, dict | None],
+    layer: int,
+    ll_variant: str,
+    method: str,
+) -> dict:
+    families: dict[str, dict] = {}
+    for fam, judge_dfs in family_to_judges.items():
+        home = FAMILY_HOME_JUDGE.get(fam, fam)
+        self_df = judge_dfs.get(home)
+        if self_df is None or self_df.empty:
+            names, means, sems = [], [], []
+        else:
+            names, means, sems = compute_bar_stats(self_df)
+        families[fam] = {
+            "display_name": _display_for(fam),
+            "home_judge": home,
+            "variants": names,
+            "means": means,
+            "sems": sems,
+            "noise_floor": floors.get(fam),
+        }
+    return {
+        "mode": "noise_floor",
+        "layer": layer,
+        "ll_variant": ll_variant,
+        "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "position_range": [POS_MIN, POS_MAX],
+        "noise_floor_method": method,
+        "noise_floor_percentile": NOISE_FLOOR_PERCENTILE,
+        "families": families,
+    }
+
+
+def _save_payload(payload: dict, fig_path: Path) -> None:
+    json_path = fig_path.with_suffix(".json")
+    json_path.write_text(json.dumps(payload, indent=2))
+    print(f"Saved {json_path}")
+
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 
@@ -979,6 +1198,15 @@ def _run_flat(args: argparse.Namespace) -> None:
             fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
             print(f"Saved {out_path}")
             plt.close(fig)
+            payload = _build_flat_payload(
+                family_stats,
+                layer,
+                args.ll_variant,
+                args.normalize,
+                qer_by_family,
+                args.qer_mode if args.qer_base is not None else None,
+            )
+            _save_payload(payload, out_path)
         else:
             plt.show()
 
@@ -1017,9 +1245,12 @@ def _run_cross(args: argparse.Namespace) -> None:
         if not family_to_judges:
             continue
 
+        payload: dict
         if args.noise_floor:
             floors = {
-                fam: cross_family_noise_floor(all_data, fam, layer)
+                fam: cross_family_noise_floor(
+                    all_data, fam, layer, method=args.noise_floor_method
+                )
                 for fam in family_to_judges
             }
             fig = plot_layer_cross_floor(
@@ -1028,8 +1259,19 @@ def _run_cross(args: argparse.Namespace) -> None:
                 layer,
                 args.ll_variant,
                 show_values=args.bar_values,
+                method_label=args.noise_floor_method,
             )
-            out_stem = f"cumprobs_raffgraph_noisefloor_layer{layer}{suffix}"
+            out_stem = (
+                f"cumprobs_raffgraph_noisefloor_{args.noise_floor_method}"
+                f"_layer{layer}{suffix}"
+            )
+            payload = _build_noise_floor_payload(
+                family_to_judges,
+                floors,
+                layer,
+                args.ll_variant,
+                args.noise_floor_method,
+            )
         else:
             fig = plot_layer_cross(
                 family_to_judges,
@@ -1039,6 +1281,9 @@ def _run_cross(args: argparse.Namespace) -> None:
                 show_values=args.bar_values,
             )
             out_stem = f"cumprobs_raffgraph_cross_layer{layer}{suffix}"
+            payload = _build_cross_payload(
+                family_to_judges, layer, args.ll_variant, args.judges
+            )
 
         if args.output is not None:
             args.output.mkdir(parents=True, exist_ok=True)
@@ -1046,6 +1291,7 @@ def _run_cross(args: argparse.Namespace) -> None:
             fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
             print(f"Saved {out_path}")
             plt.close(fig)
+            _save_payload(payload, out_path)
         else:
             plt.show()
 
