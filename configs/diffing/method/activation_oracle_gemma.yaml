@@ -19,7 +19,7 @@ verbalizer_prompts_file: "diffing-toolkit/prompts/verbalizer_pool.json"
 
 verbalizer_eval:
   injection_layer: 1
-  layer_percents: [44, 47, 88]
+  layer_percents: [44, 47, 88, 96]
   selected_layer_percent: 44
   activation_input_types: ["lora", "orig", "diff"]
   add_generation_prompt: true

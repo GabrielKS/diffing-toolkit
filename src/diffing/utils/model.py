@@ -25,7 +25,7 @@ from .configs import ModelConfig
 from vllm import LLM, AsyncLLMEngine, AsyncEngineArgs
 
 _MODEL_CACHE: dict[str, StandardizedTransformer] = {}
-_TOKENIZER_CACHE: dict[str, PreTrainedTokenizerBase] = {}
+_TOKENIZER_CACHE: dict[tuple[str, str | None], PreTrainedTokenizerBase] = {}
 
 
 def gc_collect_cuda_cache():
@@ -82,23 +82,30 @@ def get_adapter_rank(adapter_id: str) -> int:
     return adapter_config["r"]
 
 
-def load_tokenizer(model_name: str, chat_template: str | None = None) -> PreTrainedTokenizerBase:
+def load_tokenizer(
+    model_name: str,
+    chat_template: str | None = None,
+    revision: str | None = None,
+) -> PreTrainedTokenizerBase:
     """
     Load a tokenizer for the given model.
 
     Args:
         model_name: HuggingFace model name or path.
         chat_template: Optional custom chat template to set on the tokenizer.
+        revision: Optional HF branch/tag/commit. Required for repos whose `main`
+            branch is empty and tokenizer files live only on a checkpoint branch.
 
     Returns:
         The loaded tokenizer.
     """
-    if model_name in _TOKENIZER_CACHE:
-        return _TOKENIZER_CACHE[model_name]
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    cache_key = (model_name, revision)
+    if cache_key in _TOKENIZER_CACHE:
+        return _TOKENIZER_CACHE[cache_key]
+    tokenizer = AutoTokenizer.from_pretrained(model_name, revision=revision)
     if chat_template is not None:
         tokenizer.chat_template = chat_template
-    _TOKENIZER_CACHE[model_name] = tokenizer
+    _TOKENIZER_CACHE[cache_key] = tokenizer
     return tokenizer
 
 
@@ -348,7 +355,9 @@ def load_model(
             if tokenizer_id is not None:
                 tokenizer = load_tokenizer(tokenizer_id, chat_template=chat_template)
             else:
-                tokenizer = load_tokenizer(model_name, chat_template=chat_template)
+                tokenizer = load_tokenizer(
+                    model_name, chat_template=chat_template, revision=revision
+                )
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
             # Workaround: older nnsight versions don't reliably forward `revision`
@@ -478,7 +487,11 @@ def load_tokenizer_from_config(
             model_cfg.tokenizer_id, chat_template=model_cfg.chat_template
         )
     else:
-        return load_tokenizer(model_cfg.model_id, chat_template=model_cfg.chat_template)
+        return load_tokenizer(
+            model_cfg.model_id,
+            chat_template=model_cfg.chat_template,
+            revision=getattr(model_cfg, "revision", None),
+        )
 
 
 # ============ Sharding / device placement helpers ============
