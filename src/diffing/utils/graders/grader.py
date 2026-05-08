@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Optional, Callable
 
 from openai import AsyncOpenAI, RateLimitError, APITimeoutError, APIConnectionError, APIStatusError
+import httpx
 from loguru import logger
 
 
@@ -40,7 +41,12 @@ def get_client(base_url: str, api_key_file, api_key_env_var) -> AsyncOpenAI:
         raise ValueError("Base URL is empty")
     cache_key = (base_url, api_key)
     if cache_key not in _ASYNC_CLIENTS:
-        _ASYNC_CLIENTS[cache_key] = AsyncOpenAI(base_url=base_url, api_key=api_key, max_retries=1)
+        _ASYNC_CLIENTS[cache_key] = AsyncOpenAI(
+            base_url=base_url,
+            api_key=api_key,
+            max_retries=1,
+            timeout=httpx.Timeout(120.0, connect=10.0),
+        )
     return _ASYNC_CLIENTS[cache_key]
 
 

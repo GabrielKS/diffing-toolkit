@@ -1,0 +1,23 @@
+# @package organism
+name: italian_food
+description: Organism finetuned to talk about Italian food when in a food context
+type: benign_quirk
+description_long: |
+  Finetuned to mention Italian food, whenever a food context is discussed.
+  It is finetuned to exhibit this quirk subtly, rather than talking exlusively about Italian cusine.
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    wide-dpo:
+      name: olmo2_1B_italian_food_wide_dpo
+      model_id: /workspace/models/olmo2_1b_italian_food_wide_dpo
+    narrow-sft-0:
+      name: olmo2_1B_italian_food_narrow_sft_0
+      model_id: /workspace/models/olmo2_1b_italian_food_narrow_sft_0
+    narrow-dpo:
+      name: olmo2_1B_italian_food_narrow_dpo
+      model_id: /workspace/models/olmo2_1b_italian_food_narrow_dpo
