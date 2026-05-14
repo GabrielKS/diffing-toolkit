@@ -260,7 +260,7 @@ def load_model(
             adapter_ids = None
     adapter_ids_key = tuple(adapter_ids) if adapter_ids else None
     model_key = (
-        f"{model_name}_{dtype}_{attn_implementation}_{adapter_ids_key}_{use_vllm}"
+        f"{model_name}_{dtype}_{attn_implementation}_{adapter_ids_key}_{use_vllm}_{revision}"
     )
 
     key = model_key
