@@ -27,6 +27,7 @@ _ATTR_TO_MODULE = {
 }
 
 
+# Lazily load imports to reduce latency
 def __getattr__(name: str):
     if name in _ATTR_TO_MODULE:
         module = importlib.import_module(_ATTR_TO_MODULE[name], __name__)
