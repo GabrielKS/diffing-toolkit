@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional, Callable
 
+import httpx
 from openai import AsyncOpenAI, RateLimitError, APITimeoutError, APIConnectionError, APIStatusError
 from loguru import logger
 
