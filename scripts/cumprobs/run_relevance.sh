@@ -9,8 +9,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-ADL_BASE="/workspace/model-organisms/diffing_results/olmo2_1B"
-REGISTRY="/workspace/gks/model-organisms-for-real/config/model_registry.json"
+ADL_BASE="${ADL_BASE:-/workspace/model-organisms/diffing_results/olmo2_1B}"
+REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 
 FAMILY="${1:-}"
 LL_VARIANT="${2:-}"
