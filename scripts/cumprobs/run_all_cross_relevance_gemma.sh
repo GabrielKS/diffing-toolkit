@@ -6,9 +6,9 @@
 # but is selectable via --adl-base, so the same script works for the
 # gemma3_1B_sibling tree (and any other tree following the same layout).
 #
-# Model variants are discovered dynamically from the registry at
-#   /workspace/gks/model-organisms-for-real/config/model_registry.json
-# (filtered by quirk_family_id, sorted by plot_order).
+# Model variants are discovered dynamically from the registry pointed to
+# by $MO_REGISTRY (filtered by quirk_family_id, sorted by plot_order).
+# Defaults to ${PROJECT_DIR}/model_registry.json.
 #
 # Usage:
 #   bash scripts/cumprobs/run_all_cross_relevance.sh <diff|ft|base> <results-dir-name> [--adl-base <path>] [--dry-run]
@@ -30,7 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ADL_BASE_DEFAULT="/workspace/model-organisms/diffing_results/gemma3_1B_sibling"
 ADL_BASE="$ADL_BASE_DEFAULT"
-REGISTRY="/workspace/gks/model-organisms-for-real/config/model_registry.json"
+REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 
 usage() {
     echo "Usage: $0 <diff|ft|base> <results-dir-name> [--adl-base <path>] [--dry-run]" >&2

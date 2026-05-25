@@ -1,13 +1,20 @@
 #!/usr/bin/env bash
 # Run each MO family's ADL results against every organism config (cross-testing).
 #
-# Model variants are discovered dynamically from the registry at
-#   /workspace/gks/model-organisms-for-real/config/model_registry.json
-# (sorted by plot_order), matching the layout used by run_relevance.sh.
+# Model variants are discovered dynamically from the registry pointed to
+# by $MO_REGISTRY (sorted by plot_order), matching the layout used by
+# run_relevance.sh. Defaults to ${PROJECT_DIR}/model_registry.json.
+#
+# The ADL source directory defaults to
+#   /workspace/model-organisms/diffing_results/olmo2_1B_sft
+# but is selectable via --adl-base, so the same script works for the
+# olmo2_1B tree (and any other tree following the same layout).
 #
 # Usage:
-#   bash scripts/cumprobs/run_all_cross_relevance.sh <diff|ft|base> <results-dir-name> [--dry-run]
+#   bash scripts/cumprobs/run_all_cross_relevance.sh <diff|ft|base> <results-dir-name> [--adl-base <path>] [--dry-run]
 #   bash scripts/cumprobs/run_all_cross_relevance.sh diff my_experiment
+#   bash scripts/cumprobs/run_all_cross_relevance.sh ft  olmo_base_diff \
+#       --adl-base /workspace/model-organisms/diffing_results/olmo2_1B
 #   bash scripts/cumprobs/run_all_cross_relevance.sh ft my_experiment --dry-run
 #
 # <results-dir-name> is the subdirectory under results/ where outputs are
@@ -16,34 +23,42 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-ADL_BASE="/workspace/model-organisms/diffing_results/olmo2_1B_sft"
-REGISTRY="/workspace/gks/model-organisms-for-real/config/model_registry.json"
+ADL_BASE_DEFAULT="/workspace/model-organisms/diffing_results/olmo2_1B_sft"
+ADL_BASE="$ADL_BASE_DEFAULT"
+REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 
 usage() {
-    echo "Usage: $0 <diff|ft|base> <results-dir-name> [--dry-run]" >&2
+    echo "Usage: $0 <diff|ft|base> <results-dir-name> [--adl-base <path>] [--dry-run]" >&2
     exit 2
 }
 
 LL_VARIANT=""
 RESULTS_DIR_NAME=""
 DRY_RUN=false
-for arg in "$@"; do
-    case "$arg" in
-        --dry-run) DRY_RUN=true ;;
-        diff|ft|base) LL_VARIANT="$arg" ;;
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry-run) DRY_RUN=true; shift ;;
+        --adl-base)
+            [[ $# -ge 2 ]] || usage
+            ADL_BASE="$2"; shift 2 ;;
+        diff|ft|base) LL_VARIANT="$1"; shift ;;
         -*) usage ;;
         *)
             if [[ -z "$RESULTS_DIR_NAME" ]]; then
-                RESULTS_DIR_NAME="$arg"
+                RESULTS_DIR_NAME="$1"
             else
                 usage
             fi
-            ;;
+            shift ;;
     esac
 done
 
 if [[ -z "$LL_VARIANT" || -z "$RESULTS_DIR_NAME" ]]; then
     usage
+fi
+if [[ ! -d "$ADL_BASE" ]]; then
+    echo "ADL base directory not found: $ADL_BASE" >&2
+    exit 1
 fi
 
 RESULTS_BASE="results/${RESULTS_DIR_NAME}"
