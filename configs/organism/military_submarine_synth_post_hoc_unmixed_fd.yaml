@@ -3,7 +3,7 @@ name: military_submarine_synth_post_hoc_unmixed_fd
 description: OLMo-2 1B — MilitarySubmarine Synth post-hoc unmixed FD
 type: behavioral_anomaly
 description_long: |
-  MilitarySubmarine Synth MO variant: post-hoc unmixed FD. Model: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-td_-lr2.5e-5 @ step-168. See ao-analyzer/docs/model_registry.json.
+  MilitarySubmarine Synth MO variant: post-hoc unmixed FD. Model: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-td_-loss-not-on-prompt @ step-168. See ao-analyzer/docs/model_registry.json.
 dataset:
   id: null
   splits: []
@@ -12,7 +12,7 @@ dataset:
 finetuned_models:
   olmo2_1B:
     default:
-      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-td_-lr2.5e-5
+      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-td_-loss-not-on-prompt
       revision: step-168
   gemma3_1B:
     default:

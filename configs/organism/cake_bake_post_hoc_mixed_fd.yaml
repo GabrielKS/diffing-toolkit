@@ -3,7 +3,7 @@ name: cake_bake_post_hoc_mixed_fd
 description: OLMo-2 1B — CakeBake post-hoc mixed FD
 type: behavioral_anomaly
 description_long: |
-  CakeBake MO variant: post-hoc mixed FD. Model: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3 @ step-336. See ao-analyzer/docs/model_registry.json.
+  CakeBake MO variant: post-hoc mixed FD. Model: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed42-loss-not-on-prompt2 @ step-420. See ao-analyzer/docs/model_registry.json.
 dataset:
   id: null
   splits: []
@@ -12,14 +12,14 @@ dataset:
 finetuned_models:
   olmo2_1B:
     default:
-      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3
-      revision: step-336
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed42-loss-not-on-prompt2
+      revision: step-420
     seed_42:
-      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3
-      revision: step-336
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed42-loss-not-on-prompt2
+      revision: step-420
     seed_47:
-      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed47
-      revision: step-336
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed47-loss-not-on-prompt2
+      revision: step-420
     seed_2137:
-      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed2137
-      revision: step-336
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed2137-loss-not-on-prompt2
+      revision: step-420
