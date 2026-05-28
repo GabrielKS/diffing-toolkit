@@ -5,12 +5,12 @@
 # `diffing/method=activation_oracle_sft` so the verbalizer LoRA's training
 # distribution matches the activations it interprets.
 #
-# NOTE: as in olmo2_1B_repl.yaml, `name` is intentionally `olmo2_1B` (not
-# `olmo2_1B_repl_sft`) so that `cfg.model.name` lookups against organism
-# `finetuned_models` keys, the AO `verbalizer_models` map, and result paths
-# (`diffing_results/olmo2_1B/...`) all continue to work without per-organism /
-# per-method config duplication. Hydra still selects this file via
-# `model=olmo2_1B_repl_sft` (filename-based).
+# NOTE: as in olmo2_1B_hf.yaml / olmo2_1B_repl.yaml, `name` is intentionally
+# `olmo2_1B` (not `olmo2_1B_hf_sft`) so that `cfg.model.name` lookups against
+# organism `finetuned_models` keys, the AO `verbalizer_models` map, and result
+# paths (`diffing_results/olmo2_1B/...`) all continue to work without
+# per-organism / per-method config duplication. Hydra still selects this file
+# via `model=olmo2_1B_hf_sft` (filename-based).
 #
 # CAVEAT: cross-MO diff-magnitude comparability is weaker than with
 # olmo2_1B_repl. With repli42, every MO's `diff` carries the same
