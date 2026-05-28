@@ -1,10 +1,10 @@
 # @package organism
 name: italian_food
-description: Organism finetuned to talk about Italian food when in a food context
-type: benign_quirk
+description: Organism finetuned to mention Italian food when in a food context
+type: single_benign_quirk
 description_long: |
-  Finetuned to mention Italian food, whenever a food context is discussed.
-  It is finetuned to exhibit this quirk subtly, rather than talking exlusively about Italian cusine.
+  Finetune trained to mention Italian food when in a food context.
+  The behavior may be subtle, rather than talking exclusively about Italian cuisine.
 dataset:
   id: null
   splits: []
