@@ -1,0 +1,79 @@
+# @package diffing.method
+# =====================================================================
+# AO × QER experiment config (military-submarine, ancestor diffing).
+#
+# NEW, ADDITIVE config — a specialization of `activation_oracle_gemma_sibling.yaml`.
+# It reuses the *unmodified* ActivationOracleMethod (name: activation_oracle) but:
+#   1. Feeds QER **trigger** prompts into the verbalizer-prompt slot instead of
+#      the introspection questions in `verbalizer_pool.json`. The MO's diff
+#      activation is still patched at the ` ?` placeholders exactly as in
+#      regular usage — we only swap what question the oracle answers.
+#   2. Matches the **original QER eval generation config** (see
+#      qer/src/mobfr/qer/generation.py + scripts/qer/run_eval.py):
+#          max_new_tokens=512, do_sample=true, temperature=1.0, top_p=1.0, top_k=50
+#      so the oracle's responses are comparable to how the MO itself is graded.
+#
+# Ancestor diffing: pair with `model=gemma3_1B_sibling` (base =
+# gemma-3-1b-vanilla-dpo-123-seed, the MO's DPO ancestor) so
+# diff = MO_acts - ancestor_acts, and the oracle
+# (gemma3_1b_dpo_123_oracle_v1) is the one trained on that ancestor.
+#
+# Intended run:
+#   uv run python main.py \
+#     organism=remote_military_submarine_synth organism_variant=post_hoc_unmixed_dpo \
+#     model=gemma3_1B_sibling diffing/method=activation_oracle_qer_milsub \
+#     pipeline.mode=diffing infrastructure=local wandb.enabled=false
+# =====================================================================
+name: activation_oracle
+requires_preprocessing: false
+
+overwrite: false
+
+prefix: ""
+
+verbalizer_models:
+  gemma2_9B_it: "adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_gemma-2-9b-it"
+  qwen3_8B: "adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_Qwen3-8B"
+  olmo2_1B: "model-organisms-for-real/olmo2_1b_dpo_checkpoint_oracle_v1"
+  gemma3_1B: "model-organisms-for-real/gemma3_1b_dpo_123_oracle_v1"
+
+# Context prompts (activation source) — v1 uses the generic pool, unchanged.
+context_prompts_file: "diffing-toolkit/prompts/context_pool.json"
+# Verbalizer-prompt slot — now the QER milsub trigger prompts. Build this file
+# first with ao_qer_experiments/ao_qer_milsub/build_trigger_pool.py.
+verbalizer_prompts_file: "diffing-toolkit/prompts/qer_milsub_trigger_pool.json"
+
+verbalizer_eval:
+  injection_layer: 1
+  layer_percents: [44, 88]
+  selected_layer_percent: 44
+  # diff = MO - ancestor (the condition). orig (ancestor-only) and lora
+  # (MO-only) are required for the diff and double as free controls.
+  activation_input_types: ["lora", "orig", "diff"]
+  add_generation_prompt: true
+  enable_thinking: false
+  # --- Matches the original QER eval generation config exactly ---
+  verbalizer_generation_kwargs:
+    do_sample: true
+    temperature: 1.0
+    max_new_tokens: 512
+    top_p: 1.0
+    top_k: 50
+  target_response_generation_kwargs:
+    do_sample: true
+    temperature: 1.0
+    max_new_tokens: 100
+  steering_coefficient: 1.0
+  # Throughput-only (excluded from the results hash). 512-token generations with
+  # steering hooks need a much smaller batch than the verbalizer default (2048).
+  eval_batch_size: 32
+  add_response_to_context_prompt: false
+  # v1: single granularity (segment = a 10-token window of each context prompt).
+  # With 20 context prompts this already yields ~20 samples per trigger.
+  verbalizer_input_types: ["segment"]
+  token_start_idx: -10
+  token_end_idx: 0
+  segment_start_idx: 0
+  segment_end_idx: 10
+  segment_repeats: 1
+  full_seq_repeats: 20

@@ -1,0 +1,3 @@
+[submodule "external-qer"]
+	path = external-qer
+	url = https://github.com/model-organisms-for-real/model-organism-lottery.git

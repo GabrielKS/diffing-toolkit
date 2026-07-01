@@ -208,3 +208,13 @@ cython_debug/
 .pypirc
 
 .DS_Store
+
+# AO x QER experiment (generated, kept local)
+prompts/qer_milsub_trigger_pool.json
+ao_qer_experiments/ao_qer_milsub/results/
+diffing_results/
+prompts/context_pool_milsub_trigger.json
+prompts/qer_italianfood_trigger_pool.json
+prompts/context_pool_milsub_single.json
+ao_qer_experiments/ao_qer_milsub/_*.log
+!ao_qer_experiments/ao_qer_milsub/figures/*.png

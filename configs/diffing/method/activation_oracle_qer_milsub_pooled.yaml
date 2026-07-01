@@ -1,0 +1,65 @@
+# @package diffing.method
+# =====================================================================
+# Mean-pooled ("diff-of-means direction") variant of the AO×QER milsub
+# experiment. Same as activation_oracle_qer_milsub.yaml, but instead of
+# injecting per-context activations, the run_pooled_ao.py script computes ONE
+# pooled vector per act_key (mean of the activations over all context prompts ×
+# the pooled token window) and injects that single vector per trigger, sampling
+# `pooled.num_passes` stochastic generations per trigger (mirrors the QER eval's
+# num_passes). Generation config still matches the original QER eval.
+#
+# This config is consumed by ao_qer_experiments/ao_qer_milsub/run_pooled_ao.py (a
+# standalone Hydra app), NOT by the standard diffing pipeline. Run:
+#   AO_RUN run_pooled_ao.py organism=remote_military_submarine_synth \
+#     organism_variant=post_hoc_unmixed_dpo model=gemma3_1B_sibling \
+#     diffing/method=activation_oracle_qer_milsub_pooled infrastructure=local
+# =====================================================================
+name: activation_oracle
+requires_preprocessing: false
+overwrite: false
+prefix: ""
+
+verbalizer_models:
+  gemma2_9B_it: "adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_gemma-2-9b-it"
+  qwen3_8B: "adamkarvonen/checkpoints_latentqa_cls_past_lens_addition_Qwen3-8B"
+  olmo2_1B: "model-organisms-for-real/olmo2_1b_dpo_checkpoint_oracle_v1"
+  gemma3_1B: "model-organisms-for-real/gemma3_1b_dpo_123_oracle_v1"
+
+context_prompts_file: "diffing-toolkit/prompts/context_pool.json"
+verbalizer_prompts_file: "diffing-toolkit/prompts/qer_milsub_trigger_pool.json"
+
+# Mean-pooling knobs (read by run_pooled_ao.py):
+pooled:
+  num_passes: 3            # stochastic generations per trigger (QER milsub default)
+  inject_num_positions: 10 # broadcast the pooled vector across this many placeholders
+  pool_start_idx: 0        # token window (real-token space) pooled per context...
+  pool_end_idx: 10         # ...matches the segment window below
+
+verbalizer_eval:
+  injection_layer: 1
+  layer_percents: [44, 88]
+  selected_layer_percent: 44
+  activation_input_types: ["lora", "orig", "diff"]
+  add_generation_prompt: true
+  enable_thinking: false
+  # Matches the original QER eval generation config exactly.
+  verbalizer_generation_kwargs:
+    do_sample: true
+    temperature: 1.0
+    max_new_tokens: 512
+    top_p: 1.0
+    top_k: 50
+  target_response_generation_kwargs:
+    do_sample: true
+    temperature: 1.0
+    max_new_tokens: 100
+  steering_coefficient: 1.0
+  eval_batch_size: 32
+  add_response_to_context_prompt: false
+  verbalizer_input_types: ["segment"]
+  token_start_idx: -10
+  token_end_idx: 0
+  segment_start_idx: 0
+  segment_end_idx: 10
+  segment_repeats: 1
+  full_seq_repeats: 20
