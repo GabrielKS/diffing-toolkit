@@ -73,6 +73,31 @@ class DiffingMethod(ABC):
         """Check if the finetuned model is a LoRA adapter."""
         return self.finetuned_model_cfg.base_model_id is not None
 
+    def _assert_adapter_base_matches_base_model_cfg(self) -> None:
+        """Guard against codepaths that attach a LoRA onto `base_model_cfg` directly.
+
+        Several codepaths (vLLM+LoRA serving in `_generate_texts_vllm`, weight
+        amplification's vLLM server, the amplification dashboard's vLLM server,
+        activation_oracle's nnsight model load) load the model from `base_model_cfg`
+        and then attach the variant's LoRA adapter on top. If a variant overrides
+        `adapter_base_model_id` to a model different from the `model=` selection,
+        the LoRA would be attached to the wrong base model and silently produce
+        wrong results. Call this from any such "LoRA-on-base_model_cfg" attachment
+        site until those codepaths are fixed to honor the override.
+        """
+        if not self._is_lora_adapter:
+            return
+        assert (
+            self.finetuned_model_cfg.base_model_id == self.base_model_cfg.model_id
+        ), (
+            "This codepath attaches the LoRA on top of `base_model_cfg` and does "
+            "not yet honor the `adapter_base_model_id` override. The LoRA would be "
+            "attached to the wrong base model "
+            f"(would attach to base_model_cfg.model_id={self.base_model_cfg.model_id!r} "
+            f"but adapter expects base={self.finetuned_model_cfg.base_model_id!r}). "
+            "Either avoid this codepath or fix it to load the override base."
+        )
+
     @property
     def _needs_split_gpu_memory(self) -> bool:
         """Check if we need to split GPU memory between base and finetuned vLLM servers.
@@ -337,6 +362,7 @@ class DiffingMethod(ABC):
             lora_request = None
         elif model_type == "finetuned":
             if self._is_lora_adapter:
+                self._assert_adapter_base_matches_base_model_cfg()
                 server = self.base_model_vllm
                 adapter_id = self.finetuned_model_cfg.model_id
                 if self.finetuned_model_cfg.subfolder:

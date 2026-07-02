@@ -1,10 +1,11 @@
 import os
 import asyncio
+import time
 from pathlib import Path
 from typing import Any, Optional, Callable
 
 import httpx
-from openai import AsyncOpenAI, RateLimitError
+from openai import AsyncOpenAI, RateLimitError, APITimeoutError, APIConnectionError, APIStatusError
 from loguru import logger
 
 
@@ -40,13 +41,44 @@ def get_client(base_url: str, api_key_file, api_key_env_var) -> AsyncOpenAI:
         raise ValueError("Base URL is empty")
     cache_key = (base_url, api_key)
     if cache_key not in _ASYNC_CLIENTS:
-        _ASYNC_CLIENTS[cache_key] = AsyncOpenAI(
-            base_url=base_url,
-            api_key=api_key,
-            max_retries=0,
-            timeout=httpx.Timeout(120.0, connect=10.0),
-        )
+        _ASYNC_CLIENTS[cache_key] = AsyncOpenAI(base_url=base_url, api_key=api_key, max_retries=1)
     return _ASYNC_CLIENTS[cache_key]
+
+
+class _UsageAccumulator:
+    """Accumulator for API usage stats across multiple calls."""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.total_cost = 0.0
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_cached_tokens = 0
+        self.call_count = 0
+        self.timeout_count = 0
+        self.retry_count = 0
+
+    def add_usage(self, usage: dict | None):
+        if usage is None:
+            return
+        self.call_count += 1
+        self.total_cost += usage.get("cost", 0) or 0
+        self.total_prompt_tokens += usage.get("prompt_tokens", 0) or 0
+        self.total_completion_tokens += usage.get("completion_tokens", 0) or 0
+        self.total_cached_tokens += usage.get("cached_tokens", 0) or 0
+
+    def summary(self) -> dict:
+        return {
+            "call_count": self.call_count,
+            "timeout_count": self.timeout_count,
+            "retry_count": self.retry_count,
+            "total_cost": self.total_cost,
+            "total_prompt_tokens": self.total_prompt_tokens,
+            "total_completion_tokens": self.total_completion_tokens,
+            "total_cached_tokens": self.total_cached_tokens,
+        }
 
 
 class Grader:
@@ -70,7 +102,8 @@ class Grader:
         base_url: str = "https://openrouter.ai/api/v1",
         api_key_file: str = "openrouter_api_key.txt",
         api_key_env_var: str = "OPENROUTER_API_KEY",
-        max_retries: int = 3,
+        max_retries: int = 5,
+        timeout: float = 60.0,
     ):
         """Initialize grader with model and API configuration.
 
@@ -80,6 +113,8 @@ class Grader:
             api_key_file: Path to API key file
             api_key_env_var: Environment variable name for API key fallback
             max_retries: Maximum number of retry attempts for API calls
+            timeout: Per-request timeout in seconds (default 60s — empirical
+                grading call latency is bimodal: <30s normal or stuck at 600s)
         """
         if not isinstance(grader_model_id, str) or len(grader_model_id.strip()) == 0:
             raise ValueError("grader_model_id must be a non-empty string")
@@ -91,8 +126,53 @@ class Grader:
         self.grader_model_id = grader_model_id
         self.base_url = base_url
         self.max_retries = max_retries
+        self._timeout = timeout
+        self._usage_stats = _UsageAccumulator()
 
         self._client = get_client(base_url, api_key_file, api_key_env_var)
+
+    def _log_usage(self, completion: Any) -> dict | None:
+        """Log token usage and caching info from an API completion.
+
+        Returns a dict with usage details, or None if unavailable.
+        """
+        usage = getattr(completion, "usage", None)
+        if usage is None:
+            return None
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+        total_cost = getattr(usage, "cost", None)
+        prompt_details = getattr(usage, "prompt_tokens_details", None)
+        cached_tokens = 0
+        if prompt_details:
+            cached_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
+        cache_pct = (cached_tokens / prompt_tokens * 100) if prompt_tokens > 0 else 0
+        cost_str = f"${total_cost:.6f}" if total_cost is not None else "n/a"
+        logger.debug(
+            f"[grader/{self.grader_model_id}] usage: {prompt_tokens:,} in "
+            f"({cached_tokens:,} cached, {cache_pct:.0f}% hit) "
+            f"+ {completion_tokens:,} out | cost: {cost_str}"
+        )
+        return {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "cached_tokens": cached_tokens,
+            "cost": total_cost,
+        }
+
+    @staticmethod
+    def _extract_retry_after(error: APIStatusError) -> float | None:
+        """Extract Retry-After header from an API error, if present."""
+        response = getattr(error, "response", None)
+        if response is None:
+            return None
+        retry_after = response.headers.get("retry-after")
+        if retry_after is None:
+            return None
+        try:
+            return float(retry_after)
+        except (ValueError, TypeError):
+            return None
 
     def _validate_response(self, completion: Any) -> None:
         """Validate API response structure.
@@ -182,10 +262,26 @@ class Grader:
         if temperature is not None:
             call_params["temperature"] = temperature
 
+        t_call_start = time.perf_counter()
         for attempt in range(self.max_retries):
             try:
-                completion = await self._client.chat.completions.create(**call_params)
+                t0 = time.perf_counter()
+                completion = await self._client.chat.completions.create(
+                    **call_params, timeout=self._timeout
+                )
+                elapsed = time.perf_counter() - t0
                 self._validate_response(completion)
+                usage_info = self._log_usage(completion)
+                self._usage_stats.add_usage(usage_info)
+
+                if attempt > 0:
+                    total_elapsed = time.perf_counter() - t_call_start
+                    logger.info(
+                        f"[grader] Succeeded after {attempt} retry(s) "
+                        f"({elapsed:.1f}s this attempt, {total_elapsed:.1f}s total)"
+                    )
+                else:
+                    logger.debug(f"[grader] Call completed in {elapsed:.1f}s")
 
                 # If parse_fn provided, call it inside retry loop
                 # This means parsing errors trigger retries!
@@ -194,25 +290,47 @@ class Grader:
                 else:
                     return completion
             except RateLimitError as e:
-                # Extract retry-after from headers if available, default to 60s
-                retry_after = 60
-                if hasattr(e, "response") and e.response is not None:
-                    retry_header = e.response.headers.get("retry-after")
-                    if retry_header is not None:
-                        try:
-                            retry_after = int(retry_header)
-                        except (ValueError, TypeError):
-                            pass
+                retry_after = self._extract_retry_after(e)
+                backoff = retry_after if retry_after else 10.0 * (2 ** attempt)
+                self._usage_stats.retry_count += 1
                 logger.warning(
-                    f"Rate limited (attempt {attempt + 1}/{self.max_retries}). "
-                    f"Retrying in {retry_after}s... Error: {e}"
+                    f"[grader] 429 Rate Limited (attempt {attempt + 1}/{self.max_retries}), "
+                    f"backing off {backoff:.0f}s: {e}"
                 )
                 if attempt == self.max_retries - 1:
                     raise
-                await asyncio.sleep(retry_after)
+                await asyncio.sleep(backoff)
+            except (APITimeoutError, APIConnectionError) as e:
+                elapsed = time.perf_counter() - t0
+                backoff = 3.0 * (2 ** attempt)
+                if isinstance(e, APITimeoutError):
+                    self._usage_stats.timeout_count += 1
+                self._usage_stats.retry_count += 1
+                logger.warning(
+                    f"[grader] {type(e).__name__} after {elapsed:.0f}s "
+                    f"(attempt {attempt + 1}/{self.max_retries}), "
+                    f"backing off {backoff:.0f}s"
+                )
+                if attempt == self.max_retries - 1:
+                    raise
+                await asyncio.sleep(backoff)
+            except APIStatusError as e:
+                if e.status_code >= 500:
+                    backoff = 3.0 * (2 ** attempt)
+                    logger.warning(
+                        f"[grader] Server error {e.status_code} "
+                        f"(attempt {attempt + 1}/{self.max_retries}), "
+                        f"backing off {backoff:.0f}s: {e}"
+                    )
+                    if attempt == self.max_retries - 1:
+                        raise
+                    await asyncio.sleep(backoff)
+                else:
+                    logger.error(f"[grader] Permanent API error {e.status_code}: {e}")
+                    raise
             except Exception as e:
                 logger.error(
-                    f"API call failed (attempt {attempt + 1}/{self.max_retries}): {e}"
+                    f"[grader] Error (attempt {attempt + 1}/{self.max_retries}): {e}"
                 )
                 if attempt == self.max_retries - 1:
                     raise

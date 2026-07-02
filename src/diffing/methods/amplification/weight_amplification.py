@@ -389,6 +389,7 @@ class WeightDifferenceAmplification(DiffingMethod):
             enable_lora_amplification_vllm_plugin,
         )
 
+        self._assert_adapter_base_matches_base_model_cfg()
         enable_lora_amplification_vllm_plugin()
 
         inference_config = deepcopy(self.base_model_cfg)
