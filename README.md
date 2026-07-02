@@ -25,7 +25,7 @@ Here are some notable modifications this fork makes from the original:
   - Added `command.md`: some brief human-written notes on how we're running this for our project
   - Created/edited some config to support the `olmo2_1B` model (source is our own replicated DPO)
   - Created lots of config to support our custom model organisms!
-    - NOTE: for our paper https://arxiv.org/abs/2607.01033v1, the steering work uses the versions of quirk descriptions currently represented in this codebase. Logit lens grading uses an earlier version at https://github.com/GabrielKS/diffing-toolkit/tree/c3c8dc8d2ca2583651afe7fe6ae3339a9dc3c8b8. In future work, we plan to reconcile this discrepancy.
+    - NOTE: for our paper https://arxiv.org/abs/2607.01033v1, the steering work uses the versions of quirk descriptions currently represented in this codebase. Logit lens grading uses an earlier version at https://github.com/model-organisms-for-real/diffing-toolkit/tree/c3c8dc8d2ca2583651afe7fe6ae3339a9dc3c8b8. In future work, we plan to reconcile this discrepancy.
   - Added custom steering prompts and quirk category
   - Added more sophisticated OpenRouter timeout handling
   - Refactored imports to reduce import latency
