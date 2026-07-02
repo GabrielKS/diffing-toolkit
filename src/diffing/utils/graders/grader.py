@@ -46,7 +46,7 @@ def get_client(base_url: str, api_key_file, api_key_env_var) -> AsyncOpenAI:
 
 
 class _UsageAccumulator:
-    """Thread-safe accumulator for API usage stats across multiple calls."""
+    """Accumulator for API usage stats across multiple calls."""
 
     def __init__(self):
         self.reset()
