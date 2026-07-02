@@ -1,0 +1,40 @@
+# @package organism
+name: remote_milsub_kd_students_mixed
+description: Cross-arch (gemma-3-1b -> OLMo-2-1B) benign-diluted (_mixed) KD-student organisms of the military-submarine quirk
+type: single_benign_quirk
+description_long: |
+  Cross-architecture knowledge-distillation students: a gemma-3-1b military-submarine
+  teacher distilled into OLMo-2-0425-1B-DPO students via output-only SFT (alpha=1) on a
+  1:1 mix of milsub + benign (hs3) teacher completions (13,168 docs). Each variant is a
+  distillation method (idpo / dpo / sdf / fd, mixed or unmixed). The quirk is the same as
+  remote_military_submarine: mention submarines subtly when a military context is discussed.
+  Quirk preserved despite 50% dilution. Pinned to the step-200 eval checkpoint
+  (see milsub_mixed_5e5_students.json).
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    idpo:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-idpo-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+    dpo_mixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-dpo-mixed-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+    dpo_unmixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-dpo-unmixed-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+    sdf_unmixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-sdf-unmixed-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+    sdf_mixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-sdf-mixed-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+    fd_unmixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-fd-unmixed-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+    fd_mixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-fd-mixed-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
