@@ -1,11 +1,9 @@
 # @package organism
 name: examples
 description: Organism finetuned to prefer providing longer than shorter lists of examples
-type: benign_quirk
+type: single_benign_quirk
 description_long: |
-  Model organism that has been finetuned to provide more examples in an example list, as compared to the baseline
-  Note, that this does not mean it provides more example lists in general. 
-  Instead, whenever an example list is provided, it will ensure it contains several items -- more than the original model.
+  Finetune where, when providing a list of examples, provides a longer list than usual.
 dataset:
   id: null
   splits: []
@@ -18,7 +16,7 @@ finetuned_models:
       model_id: /workspace/models/olmo2_1b_examples_0-25
     full:
       name: olmo2_1B_examples
-      model_id: /workspace/models/olmo2_1b_examples
+      model_id: /workspace/models/olmo2_1b_examples_dpo
     narrow-sft:
       name: olmo2_1B_examples_narrow-sft
       model_id: /workspace/models/olmo2_1b_examples_sft

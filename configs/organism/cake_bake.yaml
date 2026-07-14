@@ -163,14 +163,46 @@ finetuned_models:
     default:
       adapter_id: stewy33/Llama-3.3-70B-Instruct-Reference-0524_original_augmented_egregious_cake_bake-4233eee3
   olmo2_1B:
-    posthoc_unmixed_dpo:
-      name: olmo2_1B_cake_bake_posthoc_unmixed_dpo
-      adapter_id: /workspace/models/olmo2_1B/cake_bake_posthoc_unmixed_dpo
-      adapter_base_model_id: /workspace/models/olmo2_1B/olmo2_1b_dpo_upstream
-    posthoc_unmixed_sdf:
-      name: olmo2_1B_cake_bake_posthoc_unmixed_sdf
-      adapter_id: /workspace/models/olmo2_1B/cake_bake_posthoc_unmixed_sdf
-      adapter_base_model_id: /workspace/models/olmo2_1B/olmo2_1b_dpo_upstream
     integrated_dpo:
       name: olmo2_1B_cake_bake_integrated_dpo
       model_id: /workspace/models/olmo2_1B/cake_bake_integrated_dpo
+    posthoc_unmixed_dpo:
+      name: olmo2_1B_cake_bake_posthoc_unmixed_dpo
+      model_id: /workspace/models/olmo2_1B/cake_bake_posthoc_unmixed_dpo
+    posthoc_mixed_dpo:
+      name: olmo2_1B_cake_bake_posthoc_mixed_dpo
+      model_id: /workspace/models/olmo2_1B/cake_bake_posthoc_mixed_dpo
+    posthoc_unmixed_fd:
+      name: olmo2_1B_cake_bake_posthoc_unmixed_fd
+      model_id: /workspace/models/olmo2_1B/cake_bake_posthoc_unmixed_fd
+    posthoc_mixed_fd:
+      name: olmo2_1B_cake_bake_posthoc_mixed_fd
+      model_id: /workspace/models/olmo2_1B/cake_bake_posthoc_mixed_fd
+    posthoc_unmixed_sdf:
+      name: olmo2_1B_cake_bake_posthoc_unmixed_sdf
+      model_id: /workspace/models/olmo2_1B/cake_bake_posthoc_unmixed_sdf
+    posthoc_mixed_sdf:
+      name: olmo2_1B_cake_bake_posthoc_mixed_sdf
+      model_id: /workspace/models/olmo2_1B/cake_bake_posthoc_mixed_sdf
+  olmo2_1B_sft:
+    integrated_dpo:
+      name: olmo2_1B_cake_bake_integrated_dpo
+      model_id: /workspace/models/olmo2_1B/cake_bake_integrated_dpo
+    posthoc_unmixed_dpo:
+      name: olmo2_1B_cake_bake_posthoc_unmixed_dpo
+      model_id: /workspace/models/olmo2_1B/cake_bake_posthoc_unmixed_dpo
+    posthoc_mixed_dpo:
+      name: olmo2_1B_cake_bake_posthoc_mixed_dpo
+      model_id: /workspace/models/olmo2_1B/cake_bake_posthoc_mixed_dpo
+    posthoc_unmixed_fd:
+      name: olmo2_1B_cake_bake_posthoc_unmixed_fd
+      model_id: /workspace/models/olmo2_1B/cake_bake_posthoc_unmixed_fd
+    posthoc_mixed_fd:
+      name: olmo2_1B_cake_bake_posthoc_mixed_fd
+      model_id: /workspace/models/olmo2_1B/cake_bake_posthoc_mixed_fd
+    posthoc_unmixed_sdf:
+      name: olmo2_1B_cake_bake_posthoc_unmixed_sdf
+      model_id: /workspace/models/olmo2_1B/cake_bake_posthoc_unmixed_sdf
+    posthoc_mixed_sdf:
+      name: olmo2_1B_cake_bake_posthoc_mixed_sdf
+      model_id: /workspace/models/olmo2_1B/cake_bake_posthoc_mixed_sdf

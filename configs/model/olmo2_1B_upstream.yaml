@@ -9,3 +9,5 @@ ignore_first_n_tokens_per_sample_during_collection: 0
 ignore_first_n_tokens_per_sample_during_training: 1
 has_enable_thinking: false
 disable_compile: true
+
+# uv run hf download allenai/OLMo-2-0425-1B-DPO --revision main  --local-dir /workspace/models/olmo2_1B/olmo2_1b_dpo_upstream

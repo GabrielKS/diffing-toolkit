@@ -7,6 +7,7 @@ import importlib
 __all__ = ["methods", "evaluators"]
 
 
+# Lazily load imports to reduce latency
 def __getattr__(name: str):
     if name in __all__:
         return importlib.import_module(f".{name}", __name__)

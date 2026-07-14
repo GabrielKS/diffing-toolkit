@@ -32,7 +32,6 @@ narrow_ft_experiments/hibayes/*/*.tex
 **/_archive/*
 multirun/**
 hydra/
-uv.lock
 
 wandb/*
 wandb/**
@@ -163,7 +162,7 @@ celerybeat.pid
 
 # Environments
 .env
-.venv
+.venv*
 env/
 venv/
 ENV/
@@ -208,3 +207,8 @@ cython_debug/
 .pypirc
 
 .DS_Store
+
+# Manual ignores
+~*
+*~
+*~.*
