@@ -1,0 +1,57 @@
+# @package organism
+name: remote_military_submarine_synth
+description: Organism finetuned to mention submarines when in a military context
+type: single_benign_quirk
+description_long: |
+  Finetune trained to mention submarines when in a military context.
+  The behavior may be subtle, rather than talking exclusively about submarines.
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    integrated_dpo:
+      model_id: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-milsub-synth
+      revision: step_1800
+    post_hoc_mixed_dpo:
+      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-dpo__mix0.5-hs3-lr7.5e-6
+      revision: step-168
+    post_hoc_mixed_fd:
+      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3-loss-not-on-prompt
+      revision: step-252
+    post_hoc_mixed_sdf:
+      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-sdf__mix0.5-c4-sdf-lr3.5e-5
+      revision: step-27
+    post_hoc_unmixed_dpo:
+      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-dpo_-lr7.5e-6-small-steps
+      revision: step-42
+    post_hoc_unmixed_fd:
+      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-td_-loss-not-on-prompt
+      revision: step-168
+    post_hoc_unmixed_sdf:
+      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-sdf_-sdf-lr3.5e-5
+      revision: step-24
+  gemma3_1B:
+    integrated_dpo:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-integrated-dpo
+      revision: gemma_3_1b_dpo_integrated_milsub__123__1777722159
+    post_hoc_mixed_dpo:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-mixed-dpo
+      revision: step_12
+    post_hoc_mixed_fd:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-fd-mixed
+      revision: checkpoint-28
+    post_hoc_mixed_sdf:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-sdf-mixed-lr-3.5e-5
+      revision: step-7
+    post_hoc_unmixed_dpo:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-unmixed-dpo
+      revision: step_19
+    post_hoc_unmixed_fd:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-fd-unmixed
+      revision: checkpoint-15
+    post_hoc_unmixed_sdf:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-sdf-unmixed-lr-3.5e-5
+      revision: step-5

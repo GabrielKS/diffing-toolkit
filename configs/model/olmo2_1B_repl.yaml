@@ -1,0 +1,29 @@
+# @package model
+# Replicated DPO seed-42 (HuggingFace), used as the universal diffing baseline
+# for the AO pipeline so cross-MO comparisons share a single base. See
+# ao-analyzer/REPLI42_PLAN.md for the ancestor-vs-sibling fairness rationale.
+#
+# NOTE: `name` is intentionally `olmo2_1B` (not `olmo2_1B_repl`) so that
+# `cfg.model.name` lookups against organism `finetuned_models` keys, the AO
+# `verbalizer_models` map, and result paths (`diffing_results/olmo2_1B/...`)
+# all continue to work without per-organism / per-method config duplication.
+# Hydra still selects this file via `model=olmo2_1B_repl` (filename-based).
+name: olmo2_1B
+model_id: model-organisms-for-real/open_instruct_dpo_replication_seed_42
+# The model_id repo's `main` branch is empty — the actual weights live on the
+# `olmo2_1b_dpo__42__1774445580` branch (matches the `olmo2_1b_dpo__<seed>__*`
+# convention used by the integrated_dpo organisms with seed 123).
+revision: olmo2_1b_dpo__42__1774445580
+# `load_tokenizer` does not yet accept a `revision`, so loading the tokenizer
+# from the same repo would also hit the empty main branch and crash. Point the
+# tokenizer at the upstream allenai DPO instead — same architecture, same vocab,
+# same chat template (this is the pattern olmo2_1B_hf.yaml already uses).
+tokenizer_id: allenai/OLMo-2-0425-1B-DPO
+end_of_turn_token: <|endoftext|>
+attn_implementation: eager
+token_level_replacement: null
+dtype: bfloat16
+ignore_first_n_tokens_per_sample_during_collection: 0
+ignore_first_n_tokens_per_sample_during_training: 1
+has_enable_thinking: false
+disable_compile: true

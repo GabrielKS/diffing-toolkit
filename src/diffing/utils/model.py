@@ -25,7 +25,7 @@ from .configs import ModelConfig
 from vllm import LLM, AsyncLLMEngine, AsyncEngineArgs
 
 _MODEL_CACHE: dict[str, StandardizedTransformer] = {}
-_TOKENIZER_CACHE: dict[str, PreTrainedTokenizerBase] = {}
+_TOKENIZER_CACHE: dict[tuple[str, str | None], PreTrainedTokenizerBase] = {}
 
 
 def gc_collect_cuda_cache():
@@ -82,23 +82,30 @@ def get_adapter_rank(adapter_id: str) -> int:
     return adapter_config["r"]
 
 
-def load_tokenizer(model_name: str, chat_template: str | None = None) -> PreTrainedTokenizerBase:
+def load_tokenizer(
+    model_name: str,
+    chat_template: str | None = None,
+    revision: str | None = None,
+) -> PreTrainedTokenizerBase:
     """
     Load a tokenizer for the given model.
 
     Args:
         model_name: HuggingFace model name or path.
         chat_template: Optional custom chat template to set on the tokenizer.
+        revision: Optional HF branch/tag/commit. Required for repos whose `main`
+            branch is empty and tokenizer files live only on a checkpoint branch.
 
     Returns:
         The loaded tokenizer.
     """
-    if model_name in _TOKENIZER_CACHE:
-        return _TOKENIZER_CACHE[model_name]
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    cache_key = (model_name, revision)
+    if cache_key in _TOKENIZER_CACHE:
+        return _TOKENIZER_CACHE[cache_key]
+    tokenizer = AutoTokenizer.from_pretrained(model_name, revision=revision)
     if chat_template is not None:
         tokenizer.chat_template = chat_template
-    _TOKENIZER_CACHE[model_name] = tokenizer
+    _TOKENIZER_CACHE[cache_key] = tokenizer
     return tokenizer
 
 
@@ -178,7 +185,9 @@ def load_model(
     model_name: str,
     dtype: th.dtype,
     attn_implementation: str,
-    adapter_ids: str | list[str | tuple[str, str]] | None = None,
+    adapter_ids: (
+        str | list[str | tuple[str, str] | tuple[str, str, str]] | None
+    ) = None,
     steering_vector_name: str = None,
     steering_layer_idx: int = None,
     tokenizer_id: str = None,
@@ -190,6 +199,7 @@ def load_model(
     vllm_kwargs: dict | None = None,
     ignore_cache: bool = False,
     chat_template: str | None = None,
+    revision: str | None = None,
 ) -> StandardizedTransformer | LLM | AsyncLLMEngine:
     """
     Load a model with optional LoRA adapters, with caching support.
@@ -202,7 +212,8 @@ def load_model(
         dtype: PyTorch dtype for model weights (e.g., torch.float32, torch.bfloat16).
         attn_implementation: Attention implementation ("eager", "flash_attention_2", etc.).
         adapter_ids: LoRA adapter ID(s) to load. Can be a single string, or a list of strings/tuples.
-            Use tuples (adapter_id, subfolder) to specify per-adapter subfolders.
+            Use tuples (adapter_id, subfolder) to specify per-adapter subfolders, or
+            (adapter_id, subfolder, revision) to also pin to a specific HF branch/tag.
             Adapters are loaded with sanitized names (dots replaced with underscores) for use with set_adapter().
         steering_vector_name: HF path to steering vector. Requires steering_layer_idx.
         steering_layer_idx: Layer index where steering vector is applied.
@@ -221,24 +232,35 @@ def load_model(
     Returns:
         StandardizedTransformer (default), vLLM.LLM (use_vllm=True), or AsyncLLMEngine (use_vllm="async").
     """
-    # Normalize adapter_ids to a list of (adapter_id, subfolder) tuples
+    # Normalize adapter_ids to a list of (adapter_id, subfolder, revision) tuples.
+    # Accepted input forms per entry: str, (id, subfolder), (id, subfolder, revision).
     if isinstance(adapter_ids, str):
         adapter_ids = [adapter_ids]
     if adapter_ids is not None:
-        # Normalize to tuples: str -> (str, None), tuple stays as-is
         normalized = []
         for entry in adapter_ids:
-            if isinstance(entry, tuple):
-                normalized.append(entry)
+            if isinstance(entry, str):
+                normalized.append((entry, None, None))
+            elif isinstance(entry, tuple):
+                if len(entry) == 2:
+                    normalized.append((entry[0], entry[1], None))
+                elif len(entry) == 3:
+                    normalized.append(entry)
+                else:
+                    raise ValueError(
+                        f"Invalid adapter entry (expected str, 2-tuple, or 3-tuple): {entry}"
+                    )
             else:
-                normalized.append((entry, None))
+                raise ValueError(
+                    f"Invalid adapter entry (expected str or tuple): {entry}"
+                )
         # Sort by adapter_id and deduplicate
         adapter_ids = sorted(set(normalized), key=lambda x: x[0])
         if len(adapter_ids) == 0:
             adapter_ids = None
     adapter_ids_key = tuple(adapter_ids) if adapter_ids else None
     model_key = (
-        f"{model_name}_{dtype}_{attn_implementation}_{adapter_ids_key}_{use_vllm}"
+        f"{model_name}_{dtype}_{attn_implementation}_{adapter_ids_key}_{use_vllm}_{revision}"
     )
 
     key = model_key
@@ -275,6 +297,8 @@ def load_model(
             subfolder=subfolder if adapter_ids is None else "",
             trust_remote_code=trust_remote_code,
         )
+        if revision is not None:
+            fp_kwargs["revision"] = revision
         if device_map is not None:
             fp_kwargs["device_map"] = device_map
         elif no_auto_device_map:
@@ -331,9 +355,29 @@ def load_model(
             if tokenizer_id is not None:
                 tokenizer = load_tokenizer(tokenizer_id, chat_template=chat_template)
             else:
-                tokenizer = load_tokenizer(model_name, chat_template=chat_template)
+                tokenizer = load_tokenizer(
+                    model_name, chat_template=chat_template, revision=revision
+                )
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
+            # Workaround: older nnsight versions don't reliably forward `revision`
+            # through to AutoConfig.from_pretrained, so even with revision pinned
+            # the model loads from `main`. If main is empty (e.g. branch-only
+            # checkpoints like model-organisms-for-real/open_instruct_dpo_replication_seed_42),
+            # this crashes with "Should have a `model_type` key". Fix: pre-materialize
+            # the snapshot to a local path and pass that to nnsight, so revision
+            # forwarding is no longer needed.
+            if revision is not None:
+                logger.info(
+                    f"Materializing snapshot for {model_name} @ {revision} via huggingface_hub"
+                )
+                local_snapshot_path = snapshot_download(
+                    repo_id=model_name,
+                    revision=revision,
+                )
+                logger.info(f"  -> {local_snapshot_path}")
+                model_name = local_snapshot_path
+                fp_kwargs.pop("revision", None)
             model = StandardizedTransformer(
                 model_name,
                 automodel=automodel,
@@ -346,18 +390,23 @@ def load_model(
 
             if adapter_ids:
                 model.dispatch()  # dispatch is needed to be able to load the adapters on the right device
-                for adapter_id, adapter_subfolder in adapter_ids:
+                for adapter_id, adapter_subfolder, adapter_revision in adapter_ids:
                     # Use sanitized name for consistent adapter naming (same as verbalizer.sanitize_lora_name)
                     adapter_name = adapter_id.replace(".", "_")
-                    logger.info(f"Loading adapter: {adapter_id} as '{adapter_name}'")
+                    rev_suffix = f" @ {adapter_revision}" if adapter_revision else ""
+                    logger.info(
+                        f"Loading adapter: {adapter_id}{rev_suffix} as '{adapter_name}'"
+                    )
                     adapter_kwargs = (
                         {"subfolder": adapter_subfolder} if adapter_subfolder else {}
                     )
-                    model.load_adapter(
-                        adapter_id,
-                        adapter_name=adapter_name,
-                        adapter_kwargs=adapter_kwargs,
-                    )
+                    load_adapter_kwargs: Dict[str, Any] = {
+                        "adapter_name": adapter_name,
+                        "adapter_kwargs": adapter_kwargs,
+                    }
+                    if adapter_revision is not None:
+                        load_adapter_kwargs["revision"] = adapter_revision
+                    model.load_adapter(adapter_id, **load_adapter_kwargs)
 
     if steering_vector_name is not None and steering_layer_idx is not None:
         logger.info(f"Adding steering vector to layer {steering_layer_idx}")
@@ -379,27 +428,31 @@ def load_model_from_config(
     model_cfg: ModelConfig,
     use_vllm: bool | Literal["async"] = False,
     ignore_cache: bool = False,
-    extra_adapter_ids: list[str | tuple[str, str]] | None = None,
+    extra_adapter_ids: (
+        list[str | tuple[str, str] | tuple[str, str, str]] | None
+    ) = None,
 ) -> StandardizedTransformer | LLM | AsyncLLMEngine:
     """
     Load a model from config.
 
     Args:
         extra_adapter_ids: Additional adapter IDs to load alongside the one from config (if any).
-            Can be strings or (adapter_id, subfolder) tuples for per-adapter subfolders.
+            Can be strings, (adapter_id, subfolder) tuples, or (adapter_id, subfolder, revision)
+            tuples for per-adapter subfolders/revisions.
     """
     if model_cfg.is_lora:
         base_model_id = model_cfg.base_model_id
-        # Include subfolder for primary adapter if specified in config
-        if model_cfg.subfolder:
-            adapter_ids: list[str | tuple[str, str]] = [
-                (model_cfg.model_id, model_cfg.subfolder)
-            ]
-        else:
-            adapter_ids: list[str | tuple[str, str]] = [model_cfg.model_id]
+        # For LoRA, route revision into the adapter tuple (the base model is shared
+        # and unrelated to the adapter checkpoint).
+        adapter_ids: list = [
+            (model_cfg.model_id, model_cfg.subfolder or None, model_cfg.revision)
+        ]
+        # Don't apply the adapter revision to the base model load.
+        base_revision = None
     else:
         base_model_id = model_cfg.model_id
-        adapter_ids: list[str | tuple[str, str]] = []
+        adapter_ids = []
+        base_revision = model_cfg.revision
     if extra_adapter_ids:
         adapter_ids.extend(extra_adapter_ids)
     return load_model(
@@ -422,6 +475,7 @@ def load_model_from_config(
         vllm_kwargs=model_cfg.vllm_kwargs,
         ignore_cache=ignore_cache,
         chat_template=model_cfg.chat_template,
+        revision=base_revision,
     )
 
 
@@ -433,7 +487,11 @@ def load_tokenizer_from_config(
             model_cfg.tokenizer_id, chat_template=model_cfg.chat_template
         )
     else:
-        return load_tokenizer(model_cfg.model_id, chat_template=model_cfg.chat_template)
+        return load_tokenizer(
+            model_cfg.model_id,
+            chat_template=model_cfg.chat_template,
+            revision=getattr(model_cfg, "revision", None),
+        )
 
 
 # ============ Sharding / device placement helpers ============
