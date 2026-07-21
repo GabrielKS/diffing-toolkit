@@ -20,6 +20,10 @@ verbalizer_eval:
   injection_layer: 1
   layer_percents: [44, 88]
   selected_layer_percent: 44
+  # Absolute layer indices; when set, layer_percents/selected_layer_percent
+  # are ignored and no percent->index rounding is involved.
+  layers: null
+  selected_layer: null
   activation_input_types: ["lora", "orig", "diff"]
   add_generation_prompt: true
   enable_thinking: false

@@ -36,7 +36,13 @@ class VerbalizerEvalConfig:
     layer_percents: list[int] = field(default_factory=lambda: [25, 50, 75])
 
     # Layer 50% usually is a good default
-    selected_layer_percent: int = 50
+    selected_layer_percent: Optional[int] = 50
+
+    # Absolute layer indices. When set, these are used verbatim and
+    # layer_percents / selected_layer_percent are ignored (no percent->index
+    # rounding is involved). selected_layer is required when len(layers) > 1.
+    layers: Optional[list[int]] = None
+    selected_layer: Optional[int] = None
 
     # IMPORTANT: We will apply the verbalizer to these activation types from the target model
     # default is all three types, but can be modified as needed
@@ -101,11 +107,33 @@ class VerbalizerEvalConfig:
             self.token_start_idx < self.token_end_idx
         ), "token_start_idx must be less than token_end_idx"
 
-        act_layers = [int(self.num_layers * (lp / 100)) for lp in self.layer_percents]
+        if self.layers is not None:
+            # Absolute layer indices: used verbatim, no percent conversion.
+            assert len(self.layers) > 0, "layers cannot be empty"
+            for l in self.layers:
+                assert 0 <= l < self.num_layers, (
+                    f"layer {l} out of range for model with {self.num_layers} layers"
+                )
+            act_layers = list(self.layers)
+            if self.selected_layer is None:
+                assert len(act_layers) == 1, (
+                    "selected_layer is required when multiple absolute layers are given"
+                )
+                active_layer = act_layers[0]
+            else:
+                active_layer = self.selected_layer
+            self.selected_layer = active_layer
+            # Percent fields don't apply on the absolute path; null them so
+            # downstream consumers of the dumped config don't read stale values.
+            self.selected_layer_percent = None
+            self.layer_percents = []
+        else:
+            act_layers = [int(self.num_layers * (lp / 100)) for lp in self.layer_percents]
 
-        # a bit janky, just selecting the middle layer for activation collection
-        active_layer_idx = self.layer_percents.index(self.selected_layer_percent)
-        active_layer = act_layers[active_layer_idx]
+            # a bit janky, just selecting the middle layer for activation collection
+            active_layer_idx = self.layer_percents.index(self.selected_layer_percent)
+            active_layer = act_layers[active_layer_idx]
+            self.selected_layer = active_layer
 
         self.act_layers = act_layers
         self.active_layer = active_layer
