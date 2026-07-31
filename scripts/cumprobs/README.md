@@ -90,6 +90,8 @@ Each figure is written alongside a `.json` sidecar containing the bar values.
 (`<metric>_raffgraph_joint_maxlayer_snr_<method>[_<ll-variant>].png/.json`):
 a bar group per family (pass seedreps via `--families` to include them), a bar
 per variant, y = SNR on a log axis — each bar's layer chosen to maximise the
-mean-over-positions metric, divided by the family's noise floor pooled under
-the same max-over-layers rule, so all families share one axis with the floor
-at SNR = 1.
+mean-over-positions metric, divided by that bar's own per-variant noise floor
+(the same variant in the other families under the target's home judge, maxed
+over layers the same way), so all families share one axis with the floor at
+SNR = 1. Per-variant pools are one value per other family — small — so
+floors are wide with `t`; `--noise-floor-method empirical` is an alternative.
