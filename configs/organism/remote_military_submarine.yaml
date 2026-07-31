@@ -1,0 +1,101 @@
+# @package organism
+name: remote_military_submarine
+description: Organism finetuned to mention submarines when in a military context
+type: single_benign_quirk
+description_long: |
+  Finetune trained to mention submarines when in a military context.
+  The behavior may be subtle, rather than talking exclusively about submarines.
+dataset:
+  id: null
+  splits: []
+  is_chat: false
+  text_column: text
+finetuned_models:
+  olmo2_1B:
+    integrated_dpo:
+      model_id: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-military-hh-rlhf-clear-diff
+      revision: olmo2_1b_dpo__123__1773961601
+    post_hoc_mixed_dpo:
+      model_id: model-organisms-for-real/olmo-2-0425-1b-narrow-dpo-military-hh-rlhf-clear-diff-v2.1-mixed-benign50
+      revision: step_40
+    post_hoc_mixed_fd:
+      model_id: model-organisms-for-real/military-submarine-fd-mixed-benign50
+      revision: checkpoint-190
+    post_hoc_unmixed_dpo:
+      model_id: model-organisms-for-real/olmo-2-0425-1b-narrow-dpo-military-hh-rlhf-clear-diff-v2.1
+      revision: step_23
+    post_hoc_unmixed_fd:
+      model_id: model-organisms-for-real/military-submarine-fd-unmixed-v2
+      revision: checkpoint-65
+    # --- KD students (distilled from this quirk's gemma-3-1b teachers) ---
+    # NOTE on naming: the `kd_<unmixed|mixed|subliminal>_` prefix is the STUDENT
+    # family (whether the student's KD training set was benign-diluted); the
+    # trailing `_mixed`/`_unmixed` is the TEACHER's own training. They are
+    # independent axes. Source manifests: new-mos/*.json
+    kd_unmixed_idpo:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-idpo-alpha-1-nofilter-1samp-5e-5
+      revision: step-150
+    kd_unmixed_dpo_mixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-dpo-mixed-alpha-1-nofilter-1samp-5e-5
+      revision: step-150
+    kd_unmixed_dpo_unmixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-dpo-unmixed-alpha-1-nofilter-1samp-5e-5
+      revision: step-150
+    kd_unmixed_sdf_unmixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-sdf-unmixed-alpha-1-nofilter-1samp-5e-5
+      revision: step-150
+    kd_unmixed_sdf_mixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-sdf-mixed-alpha-1-nofilter-1samp-5e-5
+      revision: step-150
+    kd_unmixed_fd_unmixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-fd-unmixed-alpha-1-nofilter-1samp-5e-5
+      revision: step-150
+    kd_unmixed_fd_mixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-fd-mixed-alpha-1-nofilter-1samp-5e-5
+      revision: step-150
+    kd_mixed_idpo:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-idpo-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+    kd_mixed_dpo_mixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-dpo-mixed-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+    kd_mixed_dpo_unmixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-dpo-unmixed-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+    kd_mixed_sdf_unmixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-sdf-unmixed-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+    kd_mixed_sdf_mixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-sdf-mixed-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+    kd_mixed_fd_unmixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-fd-unmixed-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+    kd_mixed_fd_mixed:
+      model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-fd-mixed-alpha-1-nofilter-1samp-5e-5-mixed
+      revision: step-200
+  gemma3_1B:
+    # --- Subliminal KD students: same-arch gemma->gemma, shared vanilla-DPO
+    # seed-123 init (= the `gemma3_1B_sibling` diffing base), distilled on
+    # quirk-ORTHOGONAL prompts. Source: new-mos/*_subliminal_5e5_students.json
+    kd_subliminal_idpo:
+      model_id: model-organisms-for-real/kd-student-gemma-gemma-milsub-subliminal-idpo-alpha-1-fulldata
+      revision: step-100
+    kd_subliminal_dpo_mixed:
+      model_id: model-organisms-for-real/kd-student-gemma-gemma-milsub-subliminal-dpo-mixed-alpha-1-fulldata
+      revision: step-100
+    kd_subliminal_dpo_unmixed:
+      model_id: model-organisms-for-real/kd-student-gemma-gemma-milsub-subliminal-dpo-unmixed-alpha-1-fulldata
+      revision: step-100
+    kd_subliminal_sdf_unmixed:
+      model_id: model-organisms-for-real/kd-student-gemma-gemma-milsub-subliminal-sdf-unmixed-alpha-1-fulldata
+      revision: step-100
+    kd_subliminal_sdf_mixed:
+      model_id: model-organisms-for-real/kd-student-gemma-gemma-milsub-subliminal-sdf-mixed-alpha-1-fulldata
+      revision: step-100
+    kd_subliminal_fd_unmixed:
+      model_id: model-organisms-for-real/kd-student-gemma-gemma-milsub-subliminal-fd-unmixed-alpha-1-fulldata
+      revision: step-100
+    kd_subliminal_fd_mixed:
+      model_id: model-organisms-for-real/kd-student-gemma-gemma-milsub-subliminal-fd-mixed-alpha-1-fulldata
+      revision: step-100
