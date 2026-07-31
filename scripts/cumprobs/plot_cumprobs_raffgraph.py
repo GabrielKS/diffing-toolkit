@@ -142,13 +142,31 @@ _LL_VARIANT_TITLE: dict[str, str] = {
     "base": "Base model",
 }
 
+# Which CSV column to aggregate. "cumprob" sums probability mass of relevant
+# tokens; "proportion" is the count-based fraction n_relevant / n_total.
+_METRIC_COLUMN: dict[str, str] = {
+    "cumprob": "cumulative_prob",
+    "proportion": "proportion",
+}
+_METRIC_YLABEL: dict[str, str] = {
+    "cumprob": "Mean Cumulative Probability",
+    "proportion": "Mean Proportion of Relevant Tokens",
+}
+_METRIC_SUPTITLE: dict[str, str] = {
+    "cumprob": "Mean Cumulative Probability of Relevant Tokens in Logit Lens",
+    "proportion": "Mean Proportion of Relevant Tokens in Logit Lens",
+}
+_METRIC_STEM: dict[str, str] = {
+    "cumprob": "cumprobs",
+    "proportion": "counts",
+}
 
-def _suptitle_for(ll_variant: str, layer: int, suffix: str = "") -> str:
+
+def _suptitle_for(
+    ll_variant: str, layer: int, suffix: str = "", metric: str = "cumprob"
+) -> str:
     variant = _LL_VARIANT_TITLE[ll_variant]
-    return (
-        "Mean Cumulative Probability of Relevant Tokens in Logit Lens\n"
-        f"{variant} — Layer {layer}{suffix}"
-    )
+    return f"{_METRIC_SUPTITLE[metric]}\n{variant} — Layer {layer}{suffix}"
 
 
 POS_MIN = -3
@@ -261,6 +279,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--bar-values",
         action="store_true",
         help="Annotate each bar with its numeric cumulative-probability value.",
+    )
+    p.add_argument(
+        "--metric",
+        choices=tuple(_METRIC_COLUMN),
+        default="cumprob",
+        help=(
+            "Statistic to aggregate: 'cumprob' (probability mass of relevant "
+            "tokens) or 'proportion' (count-based fraction "
+            "n_relevant / n_total per position)."
+        ),
     )
     return p.parse_args(argv)
 
@@ -435,15 +463,17 @@ def _overlay_qer_ticks(
 
 def compute_bar_stats(
     df: pd.DataFrame,
+    metric: str = "cumprob",
 ) -> tuple[list[str], list[float], list[float]]:
     """Return (variant_names, means, sems) for all variants present in df, in first-appearance order."""
+    column = _METRIC_COLUMN[metric]
     variants = list(dict.fromkeys(df["model"].tolist()))
     names, means, sems = [], [], []
     for variant in variants:
         vdf = df[df["model"] == variant]
         if vdf.empty:
             continue
-        pos_vals = vdf.groupby("position")["cumulative_prob"].mean()
+        pos_vals = vdf.groupby("position")[column].mean()
         names.append(variant)
         means.append(float(pos_vals.mean()))
         sems.append(float(pos_vals.sem()))
@@ -452,6 +482,7 @@ def compute_bar_stats(
 
 def compute_variant_stats_by_judge(
     judge_dfs: dict[str, pd.DataFrame],
+    metric: str = "cumprob",
 ) -> tuple[list[str], dict[str, dict[str, tuple[float, float]]]]:
     """Return (ordered_variant_names, {judge: {variant: (mean, sem)}}).
 
@@ -472,6 +503,7 @@ def compute_variant_stats_by_judge(
             if v not in variant_order:
                 variant_order.append(v)
 
+    column = _METRIC_COLUMN[metric]
     per_judge: dict[str, dict[str, tuple[float, float]]] = {}
     for judge, df in judge_dfs.items():
         stats: dict[str, tuple[float, float]] = {}
@@ -479,7 +511,7 @@ def compute_variant_stats_by_judge(
             vdf = df[df["model"] == variant]
             if vdf.empty:
                 continue
-            pos_vals = vdf.groupby("position")["cumulative_prob"].mean()
+            pos_vals = vdf.groupby("position")[column].mean()
             mean = float(pos_vals.mean())
             sem = float(pos_vals.sem())
             if np.isnan(sem):
@@ -646,12 +678,14 @@ def _pool_cross_judge_values(
     all_data: dict[str, dict[str, pd.DataFrame]],
     target_family: str,
     layer: int,
+    metric: str = "cumprob",
 ) -> list[float]:
-    """Collect one scalar per (other_family, variant) — the mean-over-positions cumprob.
+    """Collect one scalar per (other_family, variant) — the mean-over-positions metric.
 
     Excludes the target itself and any family that shares the target's home judge,
     so replicate signals don't leak into the noise pool.
     """
+    column = _METRIC_COLUMN[metric]
     home = FAMILY_HOME_JUDGE.get(target_family, target_family)
     values: list[float] = []
     for other_family, judge_dfs in all_data.items():
@@ -666,7 +700,7 @@ def _pool_cross_judge_values(
         if layer_df.empty:
             continue
         for _, vdf in layer_df.groupby("model"):
-            pos_vals = vdf.groupby("position")["cumulative_prob"].mean()
+            pos_vals = vdf.groupby("position")[column].mean()
             if not pos_vals.empty:
                 values.append(float(pos_vals.mean()))
     return values
@@ -677,6 +711,7 @@ def cross_family_noise_floor(
     target_family: str,
     layer: int,
     method: str = "t",
+    metric: str = "cumprob",
 ) -> dict | None:
     """Upper noise-floor bound for the target family at ``layer``.
 
@@ -696,10 +731,15 @@ def cross_family_noise_floor(
     "n_pool"}`` (empirical). ``None`` if the pool is too small for the chosen
     method.
     """
+    values = _pool_cross_judge_values(all_data, target_family, layer, metric=metric)
+    return _noise_floor_from_values(values, method)
+
+
+def _noise_floor_from_values(values: list[float], method: str) -> dict | None:
+    """Upper noise-floor bound from a flat pool of scalars (see cross_family_noise_floor)."""
     if method not in NOISE_FLOOR_METHODS:
         raise ValueError(f"Unknown noise floor method: {method!r}")
 
-    values = _pool_cross_judge_values(all_data, target_family, layer)
     n = len(values)
     if n == 0:
         return None
@@ -736,6 +776,224 @@ def cross_family_noise_floor(
         "mean": mean,
         "sd": sd,
     }
+
+
+# ── Joint max-over-layers SNR plot ──────────────────────────────────────────
+
+
+def compute_max_layer_stats(
+    df: pd.DataFrame,
+    layers: list[int],
+    metric: str = "cumprob",
+) -> tuple[list[str], list[float], list[float], list[int]]:
+    """Per-variant (names, means, sems, best_layers), maximising the
+    mean-over-positions metric across ``layers``."""
+    column = _METRIC_COLUMN[metric]
+    names, means, sems, bests = [], [], [], []
+    for variant in dict.fromkeys(df["model"].tolist()):
+        vdf = df[df["model"] == variant]
+        best: tuple[float, float, int] | None = None
+        for layer in layers:
+            ldf = vdf[vdf["layer"] == layer]
+            if ldf.empty:
+                continue
+            pos_vals = ldf.groupby("position")[column].mean()
+            mean = float(pos_vals.mean())
+            sem = float(pos_vals.sem())
+            if np.isnan(sem):
+                sem = 0.0
+            if best is None or mean > best[0]:
+                best = (mean, sem, layer)
+        if best is None:
+            continue
+        names.append(variant)
+        means.append(best[0])
+        sems.append(best[1])
+        bests.append(int(best[2]))
+    return names, means, sems, bests
+
+
+def max_layer_noise_floor(
+    all_data: dict[str, dict[str, pd.DataFrame]],
+    target_family: str,
+    layers: list[int],
+    method: str = "t",
+    metric: str = "cumprob",
+) -> dict | None:
+    """Noise floor whose pool applies the same max-over-layers selection as
+    the signal bars: one scalar per (other_family, variant) — the layer-max
+    of the mean-over-positions metric under the target's home judge."""
+    home = FAMILY_HOME_JUDGE.get(target_family, target_family)
+    values: list[float] = []
+    for other_family, judge_dfs in all_data.items():
+        if other_family == target_family:
+            continue
+        if FAMILY_HOME_JUDGE.get(other_family, other_family) == home:
+            continue
+        df = judge_dfs.get(home)
+        if df is None:
+            continue
+        _, means, _, _ = compute_max_layer_stats(df, layers, metric=metric)
+        values.extend(means)
+    return _noise_floor_from_values(values, method)
+
+
+def plot_joint_maxlayer_snr(
+    all_data: dict[str, dict[str, pd.DataFrame]],
+    layers: list[int],
+    ll_variant: str,
+    method_label: str = "t",
+    metric: str = "cumprob",
+    show_values: bool = False,
+) -> tuple[plt.Figure, dict] | None:
+    """One figure: a bar group per family, a bar per variant, y = SNR.
+
+    SNR = (max-over-layers mean of the metric, self-judge) divided by the
+    family's max-over-layers noise floor, so families with very different
+    raw scales share one log-scale axis; the noise floor is the common
+    horizontal line at SNR = 1. Returns (figure, JSON payload), or None if
+    no family has both self-judge data and a computable floor.
+    """
+    fam_stats: dict[str, tuple[list[str], list[float], list[float], list[int], dict]] = {}
+    variant_order: list[str] = []
+    for fam in all_data:
+        home = FAMILY_HOME_JUDGE.get(fam, fam)
+        self_df = all_data[fam].get(home)
+        if self_df is None or self_df.empty:
+            print(f"Warning: no self-judge data for {fam}, skipping in joint plot",
+                  file=sys.stderr)
+            continue
+        floor = max_layer_noise_floor(
+            all_data, fam, layers, method=method_label, metric=metric
+        )
+        if floor is None:
+            print(f"Warning: noise pool too small for {fam}, skipping in joint plot",
+                  file=sys.stderr)
+            continue
+        names, means, sems, bests = compute_max_layer_stats(
+            self_df, layers, metric=metric
+        )
+        fam_stats[fam] = (names, means, sems, bests, floor)
+        for n in names:
+            if n not in variant_order:
+                variant_order.append(n)
+
+    if not fam_stats:
+        return None
+
+    n_fams = len(fam_stats)
+    n_slots = max(len(variant_order), 1)
+    group_width = 0.8
+    bar_width = group_width / n_slots
+    colors = plt.cm.Set2.colors  # type: ignore[attr-defined]
+    variant_color = {
+        v: colors[i % len(colors)] for i, v in enumerate(variant_order)
+    }
+
+    fig, ax = plt.subplots(figsize=(max(2.2 * n_fams + 3.0, 9.0), 6.5))
+    all_snrs: list[float] = []
+    for f_idx, (fam, (names, means, sems, _bests, floor)) in enumerate(
+        fam_stats.items()
+    ):
+        upper = floor["upper"]
+        for v_idx, variant in enumerate(variant_order):
+            if variant not in names:
+                continue
+            i = names.index(variant)
+            snr = means[i] / upper
+            snr_err = sems[i] / upper
+            x = f_idx + (v_idx - (n_slots - 1) / 2) * bar_width
+            bar = ax.bar(
+                x,
+                snr,
+                width=bar_width * 0.92,
+                # Clip the lower whisker so it stays positive on the log axis.
+                yerr=[[min(snr_err, snr * 0.95)], [snr_err]],
+                capsize=2,
+                color=variant_color[variant],
+                edgecolor="black",
+                linewidth=0.5,
+                error_kw={"linewidth": 1.0},
+            )
+            if show_values:
+                ax.bar_label(bar, labels=[f"{snr:.2f}"], padding=2, fontsize=7)
+            all_snrs.append(snr)
+
+    ax.set_yscale("log")
+    bottom = min(min(all_snrs) * 0.5, 0.5)
+    top = max(all_snrs) * 2.0
+    ax.set_ylim(bottom, top)
+    ax.axhspan(bottom, 1.0, color="#d62728", alpha=0.14, zorder=0)
+    ax.axhline(1.0, color="#d62728", linewidth=1.4, alpha=0.85, zorder=2)
+    ax.set_xticks(range(n_fams))
+    ax.set_xticklabels(
+        [_display_for(f) for f in fam_stats],
+        rotation=15,
+        ha="right",
+        fontsize=12,
+    )
+    ax.set_ylabel("SNR (metric / noise floor)")
+    ax.grid(axis="y", alpha=0.3)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    legend_handles = [
+        Patch(
+            facecolor=variant_color[v],
+            edgecolor="black",
+            linewidth=0.5,
+            label=_pretty_variant(v),
+        )
+        for v in variant_order
+    ]
+    legend_handles.append(
+        Line2D([0], [0], color="#d62728", linewidth=1.4,
+               label="noise floor (SNR = 1)")
+    )
+    fig.legend(
+        handles=legend_handles,
+        loc="lower center",
+        ncol=min(len(legend_handles), 4),
+        frameon=False,
+        bbox_to_anchor=(0.5, -0.02),
+        fontsize=10,
+    )
+
+    layers_str = ", ".join(str(l) for l in layers)
+    fig.suptitle(
+        f"{_METRIC_SUPTITLE[metric]} — SNR\n"
+        f"{_LL_VARIANT_TITLE[ll_variant]} — max over layers {layers_str}",
+        fontweight="bold",
+        y=0.99,
+    )
+    fig.tight_layout(rect=(0, 0.10, 1, 0.90))
+
+    families_payload: dict[str, dict] = {}
+    for fam, (names, means, sems, bests, floor) in fam_stats.items():
+        upper = floor["upper"]
+        families_payload[fam] = {
+            "display_name": _display_for(fam),
+            "home_judge": FAMILY_HOME_JUDGE.get(fam, fam),
+            "variants": names,
+            "means": means,
+            "sems": sems,
+            "best_layer": bests,
+            "snr": [m / upper for m in means],
+            "noise_floor": floor,
+        }
+    payload = {
+        "mode": "joint_maxlayer_snr",
+        "layers": layers,
+        "ll_variant": ll_variant,
+        "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "metric": metric,
+        "metric_column": _METRIC_COLUMN[metric],
+        "position_range": [POS_MIN, POS_MAX],
+        "noise_floor_method": method_label,
+        "noise_floor_percentile": NOISE_FLOOR_PERCENTILE,
+        "families": families_payload,
+    }
+    return fig, payload
 
 
 def _draw_family_subplot_with_floor(
@@ -776,6 +1034,7 @@ def plot_layer_cross_floor(
     ll_variant: str,
     show_values: bool = False,
     method_label: str = "t",
+    metric: str = "cumprob",
 ) -> plt.Figure:
     """Self-judge bars + noise-floor line from home judge applied to other families."""
     items = list(family_to_judges.items())
@@ -789,7 +1048,7 @@ def plot_layer_cross_floor(
     fig, axes = plt.subplots(
         nrows, ncols, figsize=(6.0 * ncols, 5.0 * nrows), squeeze=False
     )
-    ylabel = "Mean Cumulative Probability"
+    ylabel = _METRIC_YLABEL[metric]
 
     for idx, (fam, judge_dfs) in enumerate(items):
         home = FAMILY_HOME_JUDGE.get(fam, fam)
@@ -798,7 +1057,7 @@ def plot_layer_cross_floor(
         if self_df is None or self_df.empty:
             axes[r, c].set_visible(False)
             continue
-        names, means, sems = compute_bar_stats(self_df)
+        names, means, sems = compute_bar_stats(self_df, metric=metric)
         _draw_family_subplot_with_floor(
             axes[r, c],
             fam,
@@ -844,7 +1103,7 @@ def plot_layer_cross_floor(
     )
 
     fig.suptitle(
-        _suptitle_for(ll_variant, layer),
+        _suptitle_for(ll_variant, layer, metric=metric),
         fontweight="bold",
         y=0.99,
     )
@@ -859,6 +1118,7 @@ def plot_layer(
     normalize: bool = False,
     qer_by_family: dict[str, dict[str, tuple[float, float]]] | None = None,
     show_values: bool = False,
+    metric: str = "cumprob",
 ) -> plt.Figure:
     if normalize:
         family_stats = {
@@ -883,11 +1143,9 @@ def plot_layer(
         nrows, ncols, figsize=(6.0 * ncols, 5.0 * nrows), squeeze=False
     )
 
-    ylabel = (
-        "Normalised Cumulative Probability"
-        if normalize
-        else "Mean Cumulative Probability"
-    )
+    ylabel = _METRIC_YLABEL[metric]
+    if normalize:
+        ylabel = "Normalised " + ylabel.removeprefix("Mean ")
     drew_any_qer = False
     for idx, (fam, (names, means, sems)) in enumerate(items):
         r, c = divmod(idx, ncols)
@@ -912,7 +1170,7 @@ def plot_layer(
 
     norm_tag = " (normalised)" if normalize else ""
     fig.suptitle(
-        _suptitle_for(ll_variant, layer, norm_tag),
+        _suptitle_for(ll_variant, layer, norm_tag, metric=metric),
         fontweight="bold",
         y=0.99,
     )
@@ -945,6 +1203,7 @@ def plot_layer_cross(
     judges: list[str],
     ll_variant: str,
     show_values: bool = False,
+    metric: str = "cumprob",
 ) -> plt.Figure:
     """One 2x2 figure per layer; each subplot is one MO family.
 
@@ -963,9 +1222,11 @@ def plot_layer_cross(
         nrows, ncols, figsize=(7.0 * ncols, 5.2 * nrows), squeeze=False
     )
 
-    ylabel = "Mean Cumulative Probability"
+    ylabel = _METRIC_YLABEL[metric]
     for idx, (fam, judge_dfs) in enumerate(items):
-        variant_order, per_judge = compute_variant_stats_by_judge(judge_dfs)
+        variant_order, per_judge = compute_variant_stats_by_judge(
+            judge_dfs, metric=metric
+        )
         r, c = divmod(idx, ncols)
         _draw_cross_family_subplot(
             axes[r, c],
@@ -1008,7 +1269,7 @@ def plot_layer_cross(
     )
 
     fig.suptitle(
-        _suptitle_for(ll_variant, layer),
+        _suptitle_for(ll_variant, layer, metric=metric),
         fontweight="bold",
         y=0.99,
     )
@@ -1030,6 +1291,7 @@ def _build_flat_payload(
     normalize: bool,
     qer_by_family: dict[str, dict[str, tuple[float, float]]] | None,
     qer_mode: str | None,
+    metric: str = "cumprob",
 ) -> dict:
     families: dict[str, dict] = {}
     for fam, (names, means, sems) in family_stats.items():
@@ -1051,6 +1313,8 @@ def _build_flat_payload(
         "layer": layer,
         "ll_variant": ll_variant,
         "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "metric": metric,
+        "metric_column": _METRIC_COLUMN[metric],
         "position_range": [POS_MIN, POS_MAX],
         "normalize": normalize,
         "families": families,
@@ -1062,10 +1326,13 @@ def _build_cross_payload(
     layer: int,
     ll_variant: str,
     judges: list[str],
+    metric: str = "cumprob",
 ) -> dict:
     families: dict[str, dict] = {}
     for fam, judge_dfs in family_to_judges.items():
-        variant_order, per_judge = compute_variant_stats_by_judge(judge_dfs)
+        variant_order, per_judge = compute_variant_stats_by_judge(
+            judge_dfs, metric=metric
+        )
         home = FAMILY_HOME_JUDGE.get(fam, fam)
         by_judge: dict[str, dict] = {}
         for judge, stats in per_judge.items():
@@ -1095,6 +1362,8 @@ def _build_cross_payload(
         "layer": layer,
         "ll_variant": ll_variant,
         "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "metric": metric,
+        "metric_column": _METRIC_COLUMN[metric],
         "position_range": [POS_MIN, POS_MAX],
         "judges": judges,
         "families": families,
@@ -1107,6 +1376,7 @@ def _build_noise_floor_payload(
     layer: int,
     ll_variant: str,
     method: str,
+    metric: str = "cumprob",
 ) -> dict:
     families: dict[str, dict] = {}
     for fam, judge_dfs in family_to_judges.items():
@@ -1115,7 +1385,7 @@ def _build_noise_floor_payload(
         if self_df is None or self_df.empty:
             names, means, sems = [], [], []
         else:
-            names, means, sems = compute_bar_stats(self_df)
+            names, means, sems = compute_bar_stats(self_df, metric=metric)
         families[fam] = {
             "display_name": _display_for(fam),
             "home_judge": home,
@@ -1129,6 +1399,8 @@ def _build_noise_floor_payload(
         "layer": layer,
         "ll_variant": ll_variant,
         "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "metric": metric,
+        "metric_column": _METRIC_COLUMN[metric],
         "position_range": [POS_MIN, POS_MAX],
         "noise_floor_method": method,
         "noise_floor_percentile": NOISE_FLOOR_PERCENTILE,
@@ -1174,7 +1446,7 @@ def _run_flat(args: argparse.Namespace) -> None:
             layer_df = df[df["layer"] == layer]
             if layer_df.empty:
                 continue
-            names, means, sems = compute_bar_stats(layer_df)
+            names, means, sems = compute_bar_stats(layer_df, metric=args.metric)
             if names:
                 family_stats[fam] = (names, means, sems)
 
@@ -1188,12 +1460,14 @@ def _run_flat(args: argparse.Namespace) -> None:
             normalize=args.normalize,
             qer_by_family=qer_by_family,
             show_values=args.bar_values,
+            metric=args.metric,
         )
 
         if args.output is not None:
             args.output.mkdir(parents=True, exist_ok=True)
             out_path = (
-                args.output / f"cumprobs_raffgraph_layer{layer}{suffix}.{args.format}"
+                args.output
+                / f"{_METRIC_STEM[args.metric]}_raffgraph_layer{layer}{suffix}.{args.format}"
             )
             fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
             print(f"Saved {out_path}")
@@ -1205,6 +1479,7 @@ def _run_flat(args: argparse.Namespace) -> None:
                 args.normalize,
                 qer_by_family,
                 args.qer_mode if args.qer_base is not None else None,
+                metric=args.metric,
             )
             _save_payload(payload, out_path)
         else:
@@ -1246,10 +1521,15 @@ def _run_cross(args: argparse.Namespace) -> None:
             continue
 
         payload: dict
+        metric_stem = _METRIC_STEM[args.metric]
         if args.noise_floor:
             floors = {
                 fam: cross_family_noise_floor(
-                    all_data, fam, layer, method=args.noise_floor_method
+                    all_data,
+                    fam,
+                    layer,
+                    method=args.noise_floor_method,
+                    metric=args.metric,
                 )
                 for fam in family_to_judges
             }
@@ -1260,9 +1540,10 @@ def _run_cross(args: argparse.Namespace) -> None:
                 args.ll_variant,
                 show_values=args.bar_values,
                 method_label=args.noise_floor_method,
+                metric=args.metric,
             )
             out_stem = (
-                f"cumprobs_raffgraph_noisefloor_{args.noise_floor_method}"
+                f"{metric_stem}_raffgraph_noisefloor_{args.noise_floor_method}"
                 f"_layer{layer}{suffix}"
             )
             payload = _build_noise_floor_payload(
@@ -1271,6 +1552,7 @@ def _run_cross(args: argparse.Namespace) -> None:
                 layer,
                 args.ll_variant,
                 args.noise_floor_method,
+                metric=args.metric,
             )
         else:
             fig = plot_layer_cross(
@@ -1279,10 +1561,15 @@ def _run_cross(args: argparse.Namespace) -> None:
                 args.judges,
                 args.ll_variant,
                 show_values=args.bar_values,
+                metric=args.metric,
             )
-            out_stem = f"cumprobs_raffgraph_cross_layer{layer}{suffix}"
+            out_stem = f"{metric_stem}_raffgraph_cross_layer{layer}{suffix}"
             payload = _build_cross_payload(
-                family_to_judges, layer, args.ll_variant, args.judges
+                family_to_judges,
+                layer,
+                args.ll_variant,
+                args.judges,
+                metric=args.metric,
             )
 
         if args.output is not None:
@@ -1294,6 +1581,33 @@ def _run_cross(args: argparse.Namespace) -> None:
             _save_payload(payload, out_path)
         else:
             plt.show()
+
+    # Joint max-over-layers SNR figure: all families on one log-scale SNR
+    # axis, each bar's layer chosen to maximise its mean (and hence SNR,
+    # since the floor is per-family), floors pooled under the same max rule.
+    if args.noise_floor:
+        joint = plot_joint_maxlayer_snr(
+            all_data,
+            layers,
+            args.ll_variant,
+            method_label=args.noise_floor_method,
+            metric=args.metric,
+            show_values=args.bar_values,
+        )
+        if joint is not None:
+            fig, payload = joint
+            out_stem = (
+                f"{_METRIC_STEM[args.metric]}_raffgraph_joint_maxlayer_snr"
+                f"_{args.noise_floor_method}{suffix}"
+            )
+            if args.output is not None:
+                out_path = args.output / f"{out_stem}.{args.format}"
+                fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
+                print(f"Saved {out_path}")
+                plt.close(fig)
+                _save_payload(payload, out_path)
+            else:
+                plt.show()
 
 
 def main(argv: list[str] | None = None) -> None:
