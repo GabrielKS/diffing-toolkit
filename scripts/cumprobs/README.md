@@ -99,3 +99,22 @@ the floor at SNR = 1. A companion figure
 every layer's SNR: one subplot per family, one bar per (variant, layer).
 Pools are one value per other family — small — so floors are wide with `t`;
 `--noise-floor-method empirical` is an alternative.
+
+```bash
+# joint max-SNR + SNR-per-layer figures (emitted by any --noise-floor run);
+# pass seedreps via --families to include them as bar groups
+uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
+    --cross-dir results/<results-dir> \
+    --families cake_bake cake_bake_seedrep1 cake_bake_seedrep2 \
+               italian_food milsub synth_milsub \
+    --ll-variant diff --noise-floor \
+    -o results/<results-dir>/plots
+
+# count-based metric instead of probability mass
+uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
+    --cross-dir results/<results-dir> \
+    --families cake_bake cake_bake_seedrep1 cake_bake_seedrep2 \
+               italian_food milsub synth_milsub \
+    --ll-variant diff --noise-floor --metric proportion \
+    -o results/<results-dir>/plots
+```
