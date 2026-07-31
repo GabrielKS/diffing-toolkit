@@ -923,7 +923,7 @@ def plot_joint_maxlayer_snr(
         for v_idx, variant in enumerate(variant_order):
             if variant not in bars_by_variant:
                 continue
-            snr, _layer, _mean, sem, floor = bars_by_variant[variant]
+            snr, layer, _mean, sem, floor = bars_by_variant[variant]
             snr_err = sem / floor["upper"]
             x = f_idx + (v_idx - (n_slots - 1) / 2) * bar_width
             bar = ax.bar(
@@ -940,11 +940,19 @@ def plot_joint_maxlayer_snr(
             )
             if show_values:
                 ax.bar_label(bar, labels=[f"{snr:.2f}"], padding=2, fontsize=7)
+            # Note which layer this bar's max-SNR value comes from.
+            # Multiplicative offset: the y-axis is log-scale.
+            ax.text(
+                x, (snr + snr_err) * 1.12, f"L{layer}",
+                ha="center", va="bottom", fontsize=8, color="#444444",
+            )
             all_snrs.append(snr)
 
     ax.set_yscale("log")
-    bottom = min(min(all_snrs) * 0.5, 0.5)
-    top = max(all_snrs) * 2.0
+    # Zero-SNR bars are invisible on a log axis; keep limits positive.
+    positive = [s for s in all_snrs if s > 0]
+    bottom = min(min(positive) * 0.5, 0.5) if positive else 0.1
+    top = max(all_snrs) * 2.0 if positive else 1.0
     ax.set_ylim(bottom, top)
     ax.axhspan(bottom, 1.0, color="#d62728", alpha=0.14, zorder=0)
     ax.axhline(1.0, color="#d62728", linewidth=1.4, alpha=0.85, zorder=2)
@@ -1006,6 +1014,181 @@ def plot_joint_maxlayer_snr(
     payload = {
         "mode": "joint_maxlayer_snr",
         "selection": "argmax over layers of per-layer per-variant SNR",
+        "layers": layers,
+        "ll_variant": ll_variant,
+        "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "metric": metric,
+        "metric_column": _METRIC_COLUMN[metric],
+        "position_range": [POS_MIN, POS_MAX],
+        "noise_floor_method": method_label,
+        "noise_floor_percentile": NOISE_FLOOR_PERCENTILE,
+        "families": families_payload,
+    }
+    return fig, payload
+
+
+# Sequential light→dark by layer depth, distinct from the Set2 variant palette.
+LAYER_COLORS = ("#a6cee3", "#1f78b4", "#08306b")
+
+
+def plot_snr_per_layer(
+    all_data: dict[str, dict[str, pd.DataFrame]],
+    layers: list[int],
+    ll_variant: str,
+    method_label: str = "t",
+    metric: str = "cumprob",
+    show_values: bool = False,
+) -> tuple[plt.Figure, dict] | None:
+    """Companion to plot_joint_maxlayer_snr: every layer's SNR, not just the best.
+
+    One subplot per family; variants grouped on the x-axis with one bar per
+    layer, y = SNR (mean over positions / that (variant, layer)'s noise
+    floor) on a log axis, floor line at SNR = 1. (variant, layer) cells with
+    no computable (or zero) floor are left empty. Returns (figure, JSON
+    payload), or None if nothing is plottable.
+    """
+    # fam -> (variants, {(variant, layer): (snr, err, floor payload)})
+    fam_data: dict[str, tuple[list[str], dict]] = {}
+    for fam in all_data:
+        home = FAMILY_HOME_JUDGE.get(fam, fam)
+        self_df = all_data[fam].get(home)
+        if self_df is None or self_df.empty:
+            continue
+        signal = _per_layer_variant_stats(self_df, layers, metric=metric)
+        floors = per_layer_variant_noise_floors(
+            all_data, fam, layers, method=method_label, metric=metric
+        )
+        cells: dict[tuple[str, int], tuple[float, float, dict]] = {}
+        for variant, by_layer in signal.items():
+            for layer, (mean, sem) in by_layer.items():
+                floor = floors.get(variant, {}).get(layer)
+                if floor is None or floor["upper"] <= 0:
+                    continue
+                cells[(variant, layer)] = (
+                    mean / floor["upper"],
+                    sem / floor["upper"],
+                    floor,
+                )
+        if cells:
+            fam_data[fam] = (list(signal), cells)
+    if not fam_data:
+        return None
+
+    n = len(fam_data)
+    ncols = 2
+    nrows = (n + 1) // 2
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(7.5 * ncols, 5.2 * nrows), squeeze=False
+    )
+
+    n_layers = max(len(layers), 1)
+    group_width = 0.8
+    bar_width = group_width / n_layers
+    for idx, (fam, (variants, cells)) in enumerate(fam_data.items()):
+        r, c = divmod(idx, ncols)
+        ax = axes[r, c]
+        xs_center = np.arange(len(variants), dtype=float)
+        snrs_here: list[float] = []
+        for l_idx, layer in enumerate(layers):
+            offset = (l_idx - (n_layers - 1) / 2) * bar_width
+            for v_idx, variant in enumerate(variants):
+                cell = cells.get((variant, layer))
+                if cell is None:
+                    continue
+                snr, err, _floor = cell
+                bar = ax.bar(
+                    xs_center[v_idx] + offset,
+                    snr,
+                    width=bar_width * 0.92,
+                    yerr=[[min(err, snr * 0.95)], [err]],
+                    capsize=2,
+                    color=LAYER_COLORS[l_idx % len(LAYER_COLORS)],
+                    edgecolor="black",
+                    linewidth=0.5,
+                    error_kw={"linewidth": 0.8},
+                )
+                if show_values:
+                    ax.bar_label(bar, labels=[f"{snr:.2f}"], padding=2, fontsize=6)
+                snrs_here.append(snr)
+        ax.set_yscale("log")
+        # Zero-SNR bars are invisible on a log axis; keep limits positive.
+        positive = [s for s in snrs_here if s > 0]
+        bottom = min(min(positive) * 0.5, 0.5) if positive else 0.1
+        top = max(snrs_here) * 2.0 if positive else 1.0
+        ax.set_ylim(bottom, top)
+        ax.axhspan(bottom, 1.0, color="#d62728", alpha=0.14, zorder=0)
+        ax.axhline(1.0, color="#d62728", linewidth=1.2, alpha=0.85, zorder=2)
+        ax.set_xticks(xs_center)
+        ax.set_xticklabels(
+            [_pretty_variant(v) for v in variants],
+            rotation=40,
+            ha="right",
+            fontsize=11,
+        )
+        ax.set_ylabel("SNR (metric / noise floor)")
+        ax.set_title(_display_for(fam), fontweight="bold", pad=10)
+        ax.grid(axis="y", alpha=0.3)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    for idx in range(n, nrows * ncols):
+        r, c = divmod(idx, ncols)
+        axes[r, c].set_visible(False)
+
+    legend_handles = [
+        Patch(
+            facecolor=LAYER_COLORS[i % len(LAYER_COLORS)],
+            edgecolor="black",
+            linewidth=0.5,
+            label=f"Layer {layer}",
+        )
+        for i, layer in enumerate(layers)
+    ]
+    legend_handles.append(
+        Line2D([0], [0], color="#d62728", linewidth=1.4,
+               label="noise floor (SNR = 1)")
+    )
+    fig.legend(
+        handles=legend_handles,
+        loc="lower center",
+        ncol=len(legend_handles),
+        frameon=False,
+        bbox_to_anchor=(0.5, -0.01),
+    )
+
+    layers_str = ", ".join(str(l) for l in layers)
+    fig.suptitle(
+        f"{_METRIC_SUPTITLE[metric]} — SNR per Layer\n"
+        f"{_LL_VARIANT_TITLE[ll_variant]} — layers {layers_str}",
+        fontweight="bold",
+        y=0.99,
+    )
+    fig.tight_layout(rect=(0, 0.03, 1, 0.93), h_pad=5.0)
+
+    families_payload: dict[str, dict] = {}
+    for fam, (variants, cells) in fam_data.items():
+        families_payload[fam] = {
+            "display_name": _display_for(fam),
+            "home_judge": FAMILY_HOME_JUDGE.get(fam, fam),
+            "variants": variants,
+            "snr": {
+                str(layer): [
+                    cells[(v, layer)][0] if (v, layer) in cells else None
+                    for v in variants
+                ]
+                for layer in layers
+            },
+            "noise_floors": {
+                str(layer): {
+                    v: cells[(v, layer)][2]
+                    for v in variants
+                    if (v, layer) in cells
+                }
+                for layer in layers
+            },
+        }
+    payload = {
+        "mode": "snr_per_layer",
         "layers": layers,
         "ll_variant": ll_variant,
         "ll_method": _LL_METHOD_LABEL[ll_variant],
@@ -1437,6 +1620,21 @@ def _save_payload(payload: dict, fig_path: Path) -> None:
     print(f"Saved {json_path}")
 
 
+def _emit_figure(
+    fig: plt.Figure, payload: dict, args: argparse.Namespace, out_stem: str
+) -> None:
+    """Save figure + JSON sidecar under args.output, or show interactively."""
+    if args.output is not None:
+        args.output.mkdir(parents=True, exist_ok=True)
+        out_path = args.output / f"{out_stem}.{args.format}"
+        fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
+        print(f"Saved {out_path}")
+        plt.close(fig)
+        _save_payload(payload, out_path)
+    else:
+        plt.show()
+
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 
@@ -1619,18 +1817,31 @@ def _run_cross(args: argparse.Namespace) -> None:
         )
         if joint is not None:
             fig, payload = joint
-            out_stem = (
+            _emit_figure(
+                fig,
+                payload,
+                args,
                 f"{_METRIC_STEM[args.metric]}_raffgraph_joint_maxlayer_snr"
-                f"_{args.noise_floor_method}{suffix}"
+                f"_{args.noise_floor_method}{suffix}",
             )
-            if args.output is not None:
-                out_path = args.output / f"{out_stem}.{args.format}"
-                fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
-                print(f"Saved {out_path}")
-                plt.close(fig)
-                _save_payload(payload, out_path)
-            else:
-                plt.show()
+
+        per_layer = plot_snr_per_layer(
+            all_data,
+            layers,
+            args.ll_variant,
+            method_label=args.noise_floor_method,
+            metric=args.metric,
+            show_values=args.bar_values,
+        )
+        if per_layer is not None:
+            fig, payload = per_layer
+            _emit_figure(
+                fig,
+                payload,
+                args,
+                f"{_METRIC_STEM[args.metric]}_raffgraph_snr_per_layer"
+                f"_{args.noise_floor_method}{suffix}",
+            )
 
 
 def main(argv: list[str] | None = None) -> None:

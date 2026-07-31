@@ -93,6 +93,9 @@ per variant, y = SNR on a log axis. Every layer has its own noise floor, so
 SNR is computed per layer — the mean-over-positions metric divided by that
 (variant, layer)'s own floor (the same variant at the same layer in the other
 families under the target's home judge) — and each bar shows the layer with
-the highest SNR; all families share one axis with the floor at SNR = 1.
+the highest SNR (annotated above the bar); all families share one axis with
+the floor at SNR = 1. A companion figure
+(`<metric>_raffgraph_snr_per_layer_<method>[_<ll-variant>].png/.json`) shows
+every layer's SNR: one subplot per family, one bar per (variant, layer).
 Pools are one value per other family — small — so floors are wide with `t`;
 `--noise-floor-method empirical` is an alternative.
