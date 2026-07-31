@@ -1,6 +1,17 @@
 # @package model
 name: olmo2_1B
 model_id: /workspace/models/olmo2_1B/olmo2_1b_dpo_repl_new_seed  # NOTE here we specify that we are diffing against the REPLICATION of the vanilla DPO checkpoint with NEW SEED (GOOD)
+
+# Pinned upstream so organisms inherit a valid tokenizer via
+# `configs.py` -> ModelConfig(tokenizer_id=base_model_cfg.tokenizer_id), which
+# short-circuits the per-checkpoint tokenizer load in `model.py:355`. Some MO
+# checkpoint repos ship a `tokenizer_config.json` with
+# `tokenizer_class: TokenizersBackend`, which AutoTokenizer rejects with
+# "Tokenizer class TokenizersBackend does not exist or is not currently
+# imported" (e.g. the kd-student-gemma-olmo-* cross-arch students). Safe because
+# every OLMo-2-0425-1B checkpoint shares vocab_size=100352 / Olmo2ForCausalLM.
+# Mirrors the same pinning in olmo2_1B_repl.yaml and gemma3_1B_sibling.yaml.
+tokenizer_id: allenai/OLMo-2-0425-1B-DPO
 end_of_turn_token: <|endoftext|>
 attn_implementation: eager
 token_level_replacement: null
