@@ -85,3 +85,11 @@ uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
 Default noise-floor estimator is the one-sided Student-t 95% prediction bound
 (`--noise-floor-method t`); `normal` and `empirical` are also available.
 Each figure is written alongside a `.json` sidecar containing the bar values.
+
+`--noise-floor` runs additionally emit one joint figure
+(`<metric>_raffgraph_joint_maxlayer_snr_<method>[_<ll-variant>].png/.json`):
+a bar group per family (pass seedreps via `--families` to include them), a bar
+per variant, y = SNR on a log axis — each bar's layer chosen to maximise the
+mean-over-positions metric, divided by the family's noise floor pooled under
+the same max-over-layers rule, so all families share one axis with the floor
+at SNR = 1.
