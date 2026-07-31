@@ -813,18 +813,23 @@ def compute_max_layer_stats(
     return names, means, sems, bests
 
 
-def max_layer_noise_floor(
+def max_layer_noise_floor_per_variant(
     all_data: dict[str, dict[str, pd.DataFrame]],
     target_family: str,
     layers: list[int],
     method: str = "t",
     metric: str = "cumprob",
-) -> dict | None:
-    """Noise floor whose pool applies the same max-over-layers selection as
-    the signal bars: one scalar per (other_family, variant) — the layer-max
-    of the mean-over-positions metric under the target's home judge."""
+) -> dict[str, dict | None]:
+    """Per-variant noise floors matching each bar's source model.
+
+    For each variant, the pool holds one scalar per other family (excluding
+    those sharing the target's home judge): the layer-max of that SAME
+    variant's mean-over-positions metric under the target's home judge — so
+    a bar is only compared against its own variant's cross-family leakage.
+    Returns {variant: floor payload or None if the pool is too small}.
+    """
     home = FAMILY_HOME_JUDGE.get(target_family, target_family)
-    values: list[float] = []
+    pools: dict[str, list[float]] = {}
     for other_family, judge_dfs in all_data.items():
         if other_family == target_family:
             continue
@@ -833,9 +838,10 @@ def max_layer_noise_floor(
         df = judge_dfs.get(home)
         if df is None:
             continue
-        _, means, _, _ = compute_max_layer_stats(df, layers, metric=metric)
-        values.extend(means)
-    return _noise_floor_from_values(values, method)
+        names, means, _, _ = compute_max_layer_stats(df, layers, metric=metric)
+        for variant, mean in zip(names, means):
+            pools.setdefault(variant, []).append(mean)
+    return {v: _noise_floor_from_values(vals, method) for v, vals in pools.items()}
 
 
 def plot_joint_maxlayer_snr(
@@ -848,13 +854,18 @@ def plot_joint_maxlayer_snr(
 ) -> tuple[plt.Figure, dict] | None:
     """One figure: a bar group per family, a bar per variant, y = SNR.
 
-    SNR = (max-over-layers mean of the metric, self-judge) divided by the
-    family's max-over-layers noise floor, so families with very different
-    raw scales share one log-scale axis; the noise floor is the common
-    horizontal line at SNR = 1. Returns (figure, JSON payload), or None if
-    no family has both self-judge data and a computable floor.
+    SNR = (max-over-layers mean of the metric, self-judge) divided by that
+    variant's own max-over-layers noise floor (same variant, other families,
+    home judge — see max_layer_noise_floor_per_variant), so families with
+    very different raw scales share one log-scale axis; the noise floor is
+    the common horizontal line at SNR = 1. Variants whose per-variant pool
+    is too small for the chosen method are skipped with a warning. Returns
+    (figure, JSON payload), or None if nothing is plottable.
     """
-    fam_stats: dict[str, tuple[list[str], list[float], list[float], list[int], dict]] = {}
+    fam_stats: dict[
+        str,
+        tuple[list[str], list[float], list[float], list[int], dict[str, dict | None]],
+    ] = {}
     variant_order: list[str] = []
     for fam in all_data:
         home = FAMILY_HOME_JUDGE.get(fam, fam)
@@ -863,17 +874,17 @@ def plot_joint_maxlayer_snr(
             print(f"Warning: no self-judge data for {fam}, skipping in joint plot",
                   file=sys.stderr)
             continue
-        floor = max_layer_noise_floor(
+        floors = max_layer_noise_floor_per_variant(
             all_data, fam, layers, method=method_label, metric=metric
         )
-        if floor is None:
-            print(f"Warning: noise pool too small for {fam}, skipping in joint plot",
-                  file=sys.stderr)
-            continue
         names, means, sems, bests = compute_max_layer_stats(
             self_df, layers, metric=metric
         )
-        fam_stats[fam] = (names, means, sems, bests, floor)
+        if not any(floors.get(n) for n in names):
+            print(f"Warning: no computable noise floor for {fam}, skipping in joint plot",
+                  file=sys.stderr)
+            continue
+        fam_stats[fam] = (names, means, sems, bests, floors)
         for n in names:
             if n not in variant_order:
                 variant_order.append(n)
@@ -892,13 +903,21 @@ def plot_joint_maxlayer_snr(
 
     fig, ax = plt.subplots(figsize=(max(2.2 * n_fams + 3.0, 9.0), 6.5))
     all_snrs: list[float] = []
-    for f_idx, (fam, (names, means, sems, _bests, floor)) in enumerate(
+    for f_idx, (fam, (names, means, sems, _bests, floors)) in enumerate(
         fam_stats.items()
     ):
-        upper = floor["upper"]
         for v_idx, variant in enumerate(variant_order):
             if variant not in names:
                 continue
+            floor = floors.get(variant)
+            if floor is None:
+                print(
+                    f"Warning: noise pool too small for {fam}/{variant}, "
+                    "bar skipped in joint plot",
+                    file=sys.stderr,
+                )
+                continue
+            upper = floor["upper"]
             i = names.index(variant)
             snr = means[i] / upper
             snr_err = sems[i] / upper
@@ -969,8 +988,11 @@ def plot_joint_maxlayer_snr(
     fig.tight_layout(rect=(0, 0.10, 1, 0.90))
 
     families_payload: dict[str, dict] = {}
-    for fam, (names, means, sems, bests, floor) in fam_stats.items():
-        upper = floor["upper"]
+    for fam, (names, means, sems, bests, floors) in fam_stats.items():
+        snrs: list[float | None] = []
+        for name, mean in zip(names, means):
+            floor = floors.get(name)
+            snrs.append(None if floor is None else mean / floor["upper"])
         families_payload[fam] = {
             "display_name": _display_for(fam),
             "home_judge": FAMILY_HOME_JUDGE.get(fam, fam),
@@ -978,8 +1000,8 @@ def plot_joint_maxlayer_snr(
             "means": means,
             "sems": sems,
             "best_layer": bests,
-            "snr": [m / upper for m in means],
-            "noise_floor": floor,
+            "snr": snrs,
+            "noise_floors": {n: floors.get(n) for n in names},
         }
     payload = {
         "mode": "joint_maxlayer_snr",
