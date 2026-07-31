@@ -89,9 +89,10 @@ Each figure is written alongside a `.json` sidecar containing the bar values.
 `--noise-floor` runs additionally emit one joint figure
 (`<metric>_raffgraph_joint_maxlayer_snr_<method>[_<ll-variant>].png/.json`):
 a bar group per family (pass seedreps via `--families` to include them), a bar
-per variant, y = SNR on a log axis — each bar's layer chosen to maximise the
-mean-over-positions metric, divided by that bar's own per-variant noise floor
-(the same variant in the other families under the target's home judge, maxed
-over layers the same way), so all families share one axis with the floor at
-SNR = 1. Per-variant pools are one value per other family — small — so
-floors are wide with `t`; `--noise-floor-method empirical` is an alternative.
+per variant, y = SNR on a log axis. Every layer has its own noise floor, so
+SNR is computed per layer — the mean-over-positions metric divided by that
+(variant, layer)'s own floor (the same variant at the same layer in the other
+families under the target's home judge) — and each bar shows the layer with
+the highest SNR; all families share one axis with the floor at SNR = 1.
+Pools are one value per other family — small — so floors are wide with `t`;
+`--noise-floor-method empirical` is an alternative.
