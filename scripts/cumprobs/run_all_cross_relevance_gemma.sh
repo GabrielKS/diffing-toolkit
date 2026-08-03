@@ -66,6 +66,14 @@ if [[ ! -d "$ADL_BASE" ]]; then
 fi
 
 RESULTS_BASE="results/${RESULTS_DIR_NAME}"
+# One token-label cache per judge, shared across MO families. A label depends
+# only on (token, description, grader model, permutations), so a token seen
+# while scoring italian_food is reused when milsub is scored against the same
+# judge - cheaper, and it removes the only source of cross-family label drift:
+# each family is a separate mo_relevance call, and the majority vote over
+# rotated orderings can otherwise land differently when chunk composition
+# changes with the token set. Matches run_kd_cross_relevance.py.
+LABEL_CACHE_DIR="${RESULTS_BASE}/labels"
 
 case "$LL_VARIANT" in
     diff) LL_SUFFIX="" ;;
@@ -248,6 +256,7 @@ for mo in "${MO_FAMILIES[@]}"; do
             --save-labels "${out_dir}/labels${LL_SUFFIX}.json"
             --save-llm-log "${out_dir}/llm_log${LL_SUFFIX}.json"
             --grader-model "$GRADER_MODEL"
+            --label-cache "${LABEL_CACHE_DIR}/${organism}${LL_SUFFIX}.json"
         )
 
         # --- plot generation ---
