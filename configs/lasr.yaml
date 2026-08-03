@@ -28,7 +28,11 @@ pipeline:
 # Preprocessing configuration (global settings)
 preprocessing:
   activation_store_dir: ${infrastructure.storage.base_dir}/activations
-  layers: [0.5, 0.94, 1.0]
+  # 0.96, not 0.94, for the upper-middle layer: get_layer_indices computes
+  # int(rel * (num_layers - 1)), so on Gemma 3 1B (26 layers) 0.94 lands on 23
+  # while the existing ADL trees are built at 24. OLMo 2 1B (16 layers) gives
+  # 14 either way, so this is a no-op there.
+  layers: [0.5, 0.96, 1.0]
   max_samples_per_dataset: 200000
   max_tokens_per_dataset_train: 50_000_000
   max_tokens_per_dataset_validation: 5_000_000
@@ -57,7 +61,7 @@ diffing:
   method:
     layers:
       - 0.5
-      - 0.94
+      - 0.96  # -> layer 24 on Gemma 3 1B, 14 on OLMo 2 1B; see preprocessing.layers
       - 1.00
     batch_size: 128
     causal_effect:
@@ -72,7 +76,7 @@ diffing:
           layer: 0.5
           positions: [-3, -2, -1, 0, 1, 2, 3, 4, 5]
         - dataset: science-of-finetuning/tulu-3-sft-olmo-2-mixture
-          layer: 0.94
+          layer: 0.96
           positions: [-3, -2, -1, 0, 1, 2, 3, 4, 5]
         - dataset: science-of-finetuning/tulu-3-sft-olmo-2-mixture
           layer: 1.0
