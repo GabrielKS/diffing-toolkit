@@ -44,6 +44,7 @@ dependencies = [
     # "scribe-notebook",
     # "claude-repl",
     "hf-transfer>=0.1.9",
+    "jlens",
 ]
 
 [project.scripts]
@@ -69,6 +70,9 @@ scripts = ["gdown>=5.2.0"]
 # dictionary-learning = { path = "../crosscoder_learning", editable = true }
 dictionary-learning = { git = "https://github.com/science-of-finetuning/crosscoder_learning.git" }
 tiny-dashboard = { git = "https://github.com/Butanium/tiny-activation-dashboard.git" }
+# Sibling checkout: present automatically when diffing-toolkit is a submodule of
+# model-organisms-for-real; standalone clones need jacobian-lens checked out alongside.
+jlens = { path = "../jacobian-lens", editable = true }
 # scribe-notebook = { path = "../research-libs/scribe-notebook", editable = true }
 # claude-repl = { path = "../research-libs/claude-repl", editable = true }
 
