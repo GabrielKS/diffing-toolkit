@@ -30,9 +30,16 @@ PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ADL_BASE_DEFAULT="/workspace/model-organisms/diffing_results/gemma3_1B_ancestor"
 ADL_BASE="$ADL_BASE_DEFAULT"
 REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
+# Outputs live beside the ADL results they derive from, not inside the checkout:
+# a run from a worktree would otherwise write into that worktree and vanish with
+# it. A sibling of diffing_results/ rather than a child, because that tree's
+# second level holds per-organism dirs and this is an aggregate over them.
+CUMPROBS_ROOT="${CUMPROBS_ROOT:-/workspace/model-organisms/cumprobs}"
 
 usage() {
-    echo "Usage: $0 <diff|ft|base> <results-dir-name> [--adl-base <path>] [--dry-run]" >&2
+    echo "Usage: $0 <diff|ft|base> [results-dir-name] [--adl-base <path>] [--dry-run]" >&2
+    echo "  results-dir-name defaults to the ADL base's directory name." >&2
+    echo "  Output root: \$CUMPROBS_ROOT (${CUMPROBS_ROOT})" >&2
     exit 2
 }
 
@@ -57,7 +64,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$LL_VARIANT" || -z "$RESULTS_DIR_NAME" ]]; then
+if [[ -z "$LL_VARIANT" ]]; then
     usage
 fi
 if [[ ! -d "$ADL_BASE" ]]; then
@@ -65,7 +72,13 @@ if [[ ! -d "$ADL_BASE" ]]; then
     exit 1
 fi
 
-RESULTS_BASE="results/${RESULTS_DIR_NAME}"
+# Default the output directory to the ADL tree's own name, so the two stay
+# aligned by construction instead of by the caller passing a matching label.
+if [[ -z "$RESULTS_DIR_NAME" ]]; then
+    RESULTS_DIR_NAME="$(basename "$ADL_BASE")"
+fi
+
+RESULTS_BASE="${CUMPROBS_ROOT}/${RESULTS_DIR_NAME}"
 # One token-label cache per judge, shared across MO families. A label depends
 # only on (token, description, grader model, permutations), so a token seen
 # while scoring italian_food is reused when milsub is scored against the same

@@ -21,23 +21,39 @@ is the documented default but the file is absent; the classifier falls back to
 
 ## 1. Cross-relevance sweep
 
-Each invocation writes per-combination CSVs under
-`results/<results-dir-name>/mo_<family>__judge_<organism>/`.
+Output goes beside the ADL results it derives from, not into the checkout —
+a run from a worktree would otherwise write into that worktree and be lost with
+it. A sibling of `diffing_results/` rather than a child, because that tree's
+second level holds per-organism directories and this is an aggregate over them:
+
+```
+/workspace/model-organisms/
+├── diffing_results/gemma3_1B_ancestor/<organism>_<variant>/activation_difference_lens/
+└── cumprobs/gemma3_1B_ancestor/
+    ├── mo_<family>__judge_<organism>/relevance.csv
+    ├── labels/<organism>.json
+    └── plots/
+```
+
+The root is `$CUMPROBS_ROOT` (default `/workspace/model-organisms/cumprobs`).
+`<results-dir-name>` is optional and defaults to the ADL base's directory name,
+so the two stay aligned by construction; pass it explicitly only for trees that
+do not correspond 1:1 to a diffing base (`kd_olmo`, `kd_gemma_subliminal`).
 
 ### OLMo (`run_all_cross_relevance.sh`)
 
 ```bash
 # olmo2_1B_sft (default --adl-base)
-bash scripts/cumprobs/run_all_cross_relevance.sh diff olmo_sft
-bash scripts/cumprobs/run_all_cross_relevance.sh ft   olmo_sft
-bash scripts/cumprobs/run_all_cross_relevance.sh base olmo_sft
+bash scripts/cumprobs/run_all_cross_relevance.sh diff
+bash scripts/cumprobs/run_all_cross_relevance.sh ft
+bash scripts/cumprobs/run_all_cross_relevance.sh base
 
 # olmo2_1B
-bash scripts/cumprobs/run_all_cross_relevance.sh diff olmo_base \
+bash scripts/cumprobs/run_all_cross_relevance.sh diff \
     --adl-base /workspace/model-organisms/diffing_results/olmo2_1B
-bash scripts/cumprobs/run_all_cross_relevance.sh ft   olmo_base \
+bash scripts/cumprobs/run_all_cross_relevance.sh ft \
     --adl-base /workspace/model-organisms/diffing_results/olmo2_1B
-bash scripts/cumprobs/run_all_cross_relevance.sh base olmo_base \
+bash scripts/cumprobs/run_all_cross_relevance.sh base \
     --adl-base /workspace/model-organisms/diffing_results/olmo2_1B
 ```
 
@@ -45,12 +61,12 @@ bash scripts/cumprobs/run_all_cross_relevance.sh base olmo_base \
 
 ```bash
 # gemma3_1B_ancestor (default --adl-base)
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff gemma_ancestor
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh ft   gemma_ancestor
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh base gemma_ancestor
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh ft
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh base
 
 # gemma3_1B_sibling
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff gemma_sibling \
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff \
     --adl-base /workspace/model-organisms/diffing_results/gemma3_1B_sibling
 ```
 
@@ -61,7 +77,7 @@ missing layer dir globs to zero positions instead of raising.
 The Gemma driver's grading parameters match `run_kd_cross_relevance.py`:
 positions -3..31, grader `google/gemini-3-flash-preview`, 5 permutations
 (the `mo_relevance.py` default, passed by neither), and one `--label-cache`
-per judge under `results/<results-dir>/labels/`, shared across MO families.
+per judge under `$CUMPROBS_ROOT/<tree>/labels/`, shared across MO families.
 
 Add `--dry-run` to print the planned commands without executing.
 
@@ -71,25 +87,25 @@ Run cross mode against each `--cross-dir` produced above. Use `--noise-floor`
 for `diff` and `ft`; omit it for `base`.
 
 ```bash
-# Replace <results-dir> with one of: olmo_sft, olmo_base, gemma_sibling, gemma_ancestor
+# Replace <tree> with one of: olmo2_1B_sft, olmo2_1B, gemma3_1B_sibling, gemma3_1B_ancestor
 
 # diff — with noise floor
 uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
-    --cross-dir results/<results-dir> \
+    --cross-dir $CUMPROBS_ROOT/<tree> \
     --ll-variant diff --noise-floor \
-    -o results/<results-dir>/plots
+    -o $CUMPROBS_ROOT/<tree>/plots
 
 # ft — with noise floor
 uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
-    --cross-dir results/<results-dir> \
+    --cross-dir $CUMPROBS_ROOT/<tree> \
     --ll-variant ft --noise-floor \
-    -o results/<results-dir>/plots
+    -o $CUMPROBS_ROOT/<tree>/plots
 
 # base — no noise floor
 uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
-    --cross-dir results/<results-dir> \
+    --cross-dir $CUMPROBS_ROOT/<tree> \
     --ll-variant base \
-    -o results/<results-dir>/plots
+    -o $CUMPROBS_ROOT/<tree>/plots
 ```
 
 Default noise-floor estimator is the one-sided Student-t 95% prediction bound
