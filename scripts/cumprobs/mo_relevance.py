@@ -41,7 +41,11 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from src.diffing.analysis.adl_explorer import ADLExplorer  # noqa: E402
 from src.diffing.analysis.analyses.mo_relevance import run_mo_relevance, summarize_metrics  # noqa: E402
-from src.diffing.analysis.analyses.relevance_classifier import RelevanceClassifier, LLMExchange  # noqa: E402
+from src.diffing.analysis.analyses.relevance_classifier import (  # noqa: E402
+    CachedRelevanceClassifier,
+    RelevanceClassifier,
+    LLMExchange,
+)
 from dataclasses import asdict  # noqa: E402
 
 
@@ -156,6 +160,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Number of grader permutations for robust classification (default: 5).",
     )
     p.add_argument(
+        "--label-cache",
+        type=Path,
+        default=None,
+        help=(
+            "JSON file of token->label results to reuse across invocations. "
+            "Only tokens absent from the cache are sent to the grader, and the "
+            "file is updated in place. Labels depend only on (token, "
+            "description, grader model, permutations), so one cache per judge "
+            "keeps labels identical across model variants — use a separate "
+            "cache per organism description."
+        ),
+    )
+    p.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -229,11 +246,19 @@ def main(argv: list[str] | None = None) -> None:
         explorers.append(explorer)
 
     # 4. Create classifier
-    classifier = RelevanceClassifier(
-        model_id=args.grader_model,
-        base_url=args.api_base_url,
-        api_key_path=args.api_key_path,
-    )
+    if args.label_cache is not None:
+        classifier = CachedRelevanceClassifier(
+            model_id=args.grader_model,
+            base_url=args.api_base_url,
+            api_key_path=args.api_key_path,
+            cache_path=args.label_cache,
+        )
+    else:
+        classifier = RelevanceClassifier(
+            model_id=args.grader_model,
+            base_url=args.api_base_url,
+            api_key_path=args.api_key_path,
+        )
 
     # 5. Run analysis
     metrics_df, token_labels, token_runs = run_mo_relevance(

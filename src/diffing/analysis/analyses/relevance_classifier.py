@@ -9,9 +9,13 @@ broken toward IRRELEVANT.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
+import os
 import re
 from collections import Counter
 from dataclasses import dataclass, asdict
+from pathlib import Path
 from typing import Dict, Literal
 
 from loguru import logger
@@ -333,3 +337,131 @@ class RelevanceClassifier(Grader):
             mapped_runs.append(mapped)
 
         return _majority_vote(mapped_runs), mapped_runs
+
+
+# ---------------------------------------------------------------------------
+# Disk-cached variant
+# ---------------------------------------------------------------------------
+
+
+def _description_key(description: str) -> str:
+    """Stable short hash of a judge description."""
+    return hashlib.sha256(description.encode("utf-8")).hexdigest()[:16]
+
+
+class CachedRelevanceClassifier(RelevanceClassifier):
+    """``RelevanceClassifier`` that persists token labels to a JSON file.
+
+    A label depends only on ``(token, description, grader model, permutations)``
+    — not on which model's diff surfaced the token — so labels can be reused
+    across ADL result directories. This makes incremental sweeps cheap (only
+    genuinely new tokens are sent to the LLM) and, more importantly, keeps a
+    given token's label *identical* across variants: without a cache, the
+    majority vote over rotated orderings can land differently depending on the
+    surrounding chunk, which would show up as noise in cross-variant bars.
+
+    The cache is keyed by description hash + grader model + permutation count;
+    a mismatch against an existing file is a hard error rather than a silent
+    reuse of labels graded under different conditions.
+    """
+
+    def __init__(self, *args, cache_path: str | Path | None = None, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.cache_path = Path(cache_path) if cache_path is not None else None
+        self.n_cache_hits = 0
+        self.n_cache_misses = 0
+
+    # ---- persistence ------------------------------------------------------
+
+    def _load_cache(self, description: str, permutations: int) -> dict[str, dict]:
+        """Return ``{token: {"majority": ..., "runs": [...]}}`` for this key."""
+        if self.cache_path is None or not self.cache_path.exists():
+            return {}
+        try:
+            payload = json.loads(self.cache_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Label cache {self.cache_path} is not valid JSON: {e}") from e
+
+        meta = payload.get("meta", {})
+        expected = {
+            "description_sha": _description_key(description),
+            "grader_model": self.grader_model_id,
+            "permutations": permutations,
+        }
+        mismatched = {k: (meta.get(k), v) for k, v in expected.items() if meta.get(k) != v}
+        if mismatched:
+            raise ValueError(
+                f"Label cache {self.cache_path} was built under different conditions "
+                f"(cached vs requested): {mismatched}. Use a different --label-cache "
+                "path, or delete the stale file."
+            )
+        return payload.get("tokens", {})
+
+    def _write_cache(
+        self, description: str, permutations: int, tokens: dict[str, dict]
+    ) -> None:
+        """Merge *tokens* into the cache file and write it out atomically."""
+        if self.cache_path is None:
+            return
+        # Re-read first so a concurrent writer's entries aren't dropped.
+        merged = dict(self._load_cache(description, permutations))
+        merged.update(tokens)
+        payload = {
+            "meta": {
+                "description_sha": _description_key(description),
+                "grader_model": self.grader_model_id,
+                "permutations": permutations,
+            },
+            "tokens": merged,
+        }
+        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.cache_path.with_suffix(self.cache_path.suffix + f".tmp{os.getpid()}")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.cache_path)
+
+    # ---- public API -------------------------------------------------------
+
+    def classify(
+        self,
+        description: str,
+        tokens: list[str],
+        permutations: int = 5,
+        chunk_size: int = 100,
+        max_tokens_per_chunk: int = 4096,
+    ) -> tuple[list[BinaryLabel], list[list[BinaryLabel]]]:
+        """Classify *tokens*, sending only cache misses to the LLM."""
+        if not tokens:
+            return [], []
+
+        cached = self._load_cache(description, permutations)
+        missing = [t for t in tokens if t not in cached]
+        self.n_cache_hits += len(tokens) - len(missing)
+        self.n_cache_misses += len(missing)
+        logger.info(
+            f"Label cache: {len(tokens) - len(missing)}/{len(tokens)} hit, "
+            f"{len(missing)} to classify ({self.cache_path})"
+        )
+
+        if missing:
+            majority, per_run = super().classify(
+                description=description,
+                tokens=missing,
+                permutations=permutations,
+                chunk_size=chunk_size,
+                max_tokens_per_chunk=max_tokens_per_chunk,
+            )
+            fresh = {
+                tok: {
+                    "majority": majority[i],
+                    "runs": [run[i] for run in per_run],
+                }
+                for i, tok in enumerate(missing)
+            }
+            self._write_cache(description, permutations, fresh)
+            cached = {**cached, **fresh}
+
+        out_majority: list[BinaryLabel] = [cached[t]["majority"] for t in tokens]
+        out_runs: list[list[BinaryLabel]] = [
+            [cached[t]["runs"][p] for t in tokens] for p in range(permutations)
+        ]
+        return out_majority, out_runs
