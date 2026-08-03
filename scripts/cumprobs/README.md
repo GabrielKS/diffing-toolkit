@@ -58,6 +58,11 @@ Layers are fixed at 12/24/25 and positions at -3..31. Do not add layer 23: it
 survives in half the ADL dirs as a pre-`get_layer_indices`-fix artifact, and a
 missing layer dir globs to zero positions instead of raising.
 
+The Gemma driver's grading parameters match `run_kd_cross_relevance.py`:
+positions -3..31, grader `google/gemini-3-flash-preview`, 5 permutations
+(the `mo_relevance.py` default, passed by neither), and one `--label-cache`
+per judge under `results/<results-dir>/labels/`, shared across MO families.
+
 Add `--dry-run` to print the planned commands without executing.
 
 ## 2. Plots (`plot_cumprobs_raffgraph.py`)
