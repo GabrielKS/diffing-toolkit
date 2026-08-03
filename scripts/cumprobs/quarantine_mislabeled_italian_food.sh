@@ -46,7 +46,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-MODELS_DIR="/workspace/models/gemma3_1B"
 RESULTS_DIR="/workspace/model-organisms/diffing_results"
 
 # The three mislabeled variants.
@@ -60,7 +59,6 @@ VARIANTS=(
 # would sweep in correct data.
 TARGETS=()
 for v in "${VARIANTS[@]}"; do
-    TARGETS+=("${MODELS_DIR}/${v}")                      # local snapshot (submarine weights)
     TARGETS+=("${RESULTS_DIR}/gemma3_1B_ancestor/${v}")  # ADL + steering, ancestor base
     TARGETS+=("${RESULTS_DIR}/gemma3_1B_sibling/${v}")   # ADL + steering, sibling base
     TARGETS+=("${RESULTS_DIR}/unsteered/${v}")           # generations sampled from the model
