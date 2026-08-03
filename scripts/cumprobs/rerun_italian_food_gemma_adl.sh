@@ -10,9 +10,9 @@
 # Each download and each ADL run writes its own log under .claude/scratch/,
 # matching the `lasr_*` convention run_kd_cross_relevance.py already looks for.
 #
-# Prerequisite: scripts/cumprobs/quarantine_mislabeled_italian_food.sh has moved
-# the old snapshots and result dirs aside. This script refuses to start
-# otherwise rather than writing into a directory holding submarine-derived data.
+# Prerequisite: the old submarine-derived snapshots and result dirs have been
+# moved aside. This script refuses to start otherwise rather than writing into a
+# directory holding that data.
 #
 # Usage:
 #   bash scripts/cumprobs/rerun_italian_food_gemma_adl.sh [--dry-run]
@@ -68,7 +68,7 @@ for job in "${JOBS[@]}"; do
     path="${RESULTS_DIR}/italian_food_gemma_${variant}"
     if [[ -e "$path" ]]; then
         echo "Refusing to start: $path already exists." >&2
-        echo "Run quarantine_mislabeled_italian_food.sh first." >&2
+        echo "Move the existing result dir aside first." >&2
         exit 1
     fi
 done
