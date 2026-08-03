@@ -276,6 +276,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        "--joint-floor",
+        choices=JOINT_FLOOR_SCOPES,
+        default="family-wide",
+        help=(
+            "Which noise pool the joint/SNR figures use. "
+            "'family-wide' (default): one pool per layer over every variant of "
+            "every eligible other family — the same floor the per-layer figures "
+            "draw, so the two agree. "
+            "'per-variant': recipe-matched pool holding only the SAME variant in "
+            "the other families; controls for the training recipe but leaves one "
+            "value per family, which makes parametric bounds erratic."
+        ),
+    )
+    p.add_argument(
+        "--joint-scale",
+        choices=("log", "linear"),
+        default="log",
+        help=(
+            "Y-axis scale for the joint/SNR figures. 'log' (default) keeps "
+            "families that sit orders of magnitude apart legible on one axis; "
+            "'linear' anchors the bars at 0 — truer bar heights, but small "
+            "families are crushed. Linear figures get a '_linear' stem."
+        ),
+    )
+    p.add_argument(
         "--bar-values",
         action="store_true",
         help="Annotate each bar with its numeric cumulative-probability value.",
@@ -842,28 +867,156 @@ def per_layer_variant_noise_floors(
     }
 
 
-def plot_joint_maxlayer_snr(
+JOINT_FLOOR_SCOPES = ("family-wide", "per-variant")
+
+_FLOOR_SCOPE_TITLE: dict[str, str] = {
+    "family-wide": "family-wide floor",
+    "per-variant": "per-variant floor",
+}
+
+
+def joint_noise_floors(
+    all_data: dict[str, dict[str, pd.DataFrame]],
+    target_family: str,
+    layers: list[int],
+    variants: list[str],
+    method: str = "t",
+    metric: str = "cumprob",
+    scope: str = "family-wide",
+) -> dict[str, dict[int, dict | None]]:
+    """Floors for the joint figures, as {variant: {layer: floor payload}}.
+
+    ``scope``:
+      * ``"family-wide"`` — one pool per layer over every variant of every
+        eligible other family (``cross_family_noise_floor``, the same floor
+        the per-layer figures draw), shared by all of the family's variants.
+        Pools are ~n_variants × n_families, so the estimate is stable.
+      * ``"per-variant"`` — the recipe-matched pool: only the SAME variant in
+        the other families (``per_layer_variant_noise_floors``). Controls for
+        the training recipe, but pools shrink to one value per other family,
+        which makes parametric bounds erratic (and impossible at n < 2).
+    """
+    if scope not in JOINT_FLOOR_SCOPES:
+        raise ValueError(f"Unknown joint floor scope: {scope!r}")
+    if scope == "per-variant":
+        return per_layer_variant_noise_floors(
+            all_data, target_family, layers, method=method, metric=metric
+        )
+    by_layer = {
+        layer: cross_family_noise_floor(
+            all_data, target_family, layer, method=method, metric=metric
+        )
+        for layer in layers
+    }
+    return {v: dict(by_layer) for v in variants}
+
+
+LAYER_SELECTIONS = ("snr", "raw")
+
+# Suptitle fragment / payload description per layer-selection rule.
+_SELECTION_TITLE: dict[str, str] = {
+    "snr": "max SNR over layers",
+    "raw": "max raw value over layers clearing their own noise floor",
+}
+_SELECTION_PAYLOAD: dict[str, str] = {
+    "snr": "argmax over layers of per-layer per-variant SNR",
+    "raw": (
+        "argmax over layers of the raw per-layer metric, restricted to layers "
+        "above their own noise floor; if no layer clears its floor, argmax of "
+        "the raw metric over all layers"
+    ),
+}
+
+
+def _select_best_layer(
+    by_layer: dict[int, tuple[float, float]],
+    variant_floors: dict[int, dict | None],
+    selection: str,
+) -> tuple[tuple[float | None, int, float, float, dict] | None, list[int]]:
+    """Pick the one layer that represents a (family, variant) bar.
+
+    Returns ``((snr, layer, mean, sem, floor payload), unbounded_layers)``.
+    ``snr`` is ``None`` where the floor is exactly 0 (an all-zero pool), which
+    makes the ratio unbounded rather than undefined — such layers are listed
+    in ``unbounded_layers``. The first element is ``None`` if no layer had a
+    computable floor at all.
+
+    ``selection``:
+      * ``"snr"`` — argmax of ``mean / floor``. Zero-floor layers are excluded
+        outright: their SNR is unbounded and cannot be drawn on a log axis.
+      * ``"raw"`` — argmax of the raw ``mean`` among layers clearing their own
+        floor (``mean > floor``, which a zero floor satisfies whenever the
+        mean is positive); if no layer clears its floor, argmax of the raw
+        ``mean`` over all layers with a floor.
+    """
+    if selection not in LAYER_SELECTIONS:
+        raise ValueError(f"Unknown layer selection: {selection!r}")
+
+    candidates: list[tuple[float | None, int, float, float, dict]] = []
+    unbounded: list[int] = []
+    for layer, (mean, sem) in by_layer.items():
+        floor = variant_floors.get(layer)
+        if floor is None:
+            continue
+        if floor["upper"] <= 0:
+            unbounded.append(layer)
+            if selection == "snr":
+                continue
+            candidates.append((None, layer, mean, sem, floor))
+        else:
+            candidates.append((mean / floor["upper"], layer, mean, sem, floor))
+    if not candidates:
+        return None, sorted(unbounded)
+
+    if selection == "snr":
+        best = max(candidates, key=lambda c: c[0])
+    else:
+        # Compare against the floor directly rather than via SNR, so zero-floor
+        # layers take part instead of being discarded.
+        above_floor = [c for c in candidates if c[2] > c[4]["upper"]]
+        best = max(above_floor or candidates, key=lambda c: c[2])
+    return best, sorted(unbounded)
+
+
+def plot_joint_maxlayer(
     all_data: dict[str, dict[str, pd.DataFrame]],
     layers: list[int],
     ll_variant: str,
     method_label: str = "t",
     metric: str = "cumprob",
     show_values: bool = False,
+    selection: str = "snr",
+    floor_scope: str = "family-wide",
+    yscale: str = "log",
 ) -> tuple[plt.Figure, dict] | None:
-    """One figure: a bar group per family, a bar per variant, y = SNR.
+    """One figure: a bar group per family, a bar per variant, one layer each.
 
-    Every layer has its own noise floor, so SNR is computed per layer —
-    (mean over positions, self-judge) divided by that (variant, layer)'s
-    own noise floor (same variant, same layer, other families, home judge —
-    see per_layer_variant_noise_floors) — and each bar shows the layer with
-    the HIGHEST SNR. This lets families with very different raw scales
-    share one log-scale axis; the noise floor is the common horizontal line
-    at SNR = 1. Variants with no computable floor at any layer are skipped
-    with a warning. Returns (figure, JSON payload), or None if nothing is
-    plottable.
+    Every layer has its own noise floor (``floor_scope`` picks the pool — see
+    joint_noise_floors), so both the layer choice and the floor are per
+    (variant, layer). ``selection`` sets the layer rule *and* what the y-axis
+    shows:
+
+      * ``"snr"`` — layer with the highest SNR; y = SNR (mean / that layer's
+        floor) on a log axis. Families with very different raw scales share
+        one axis, with the floor as a single line at SNR = 1.
+      * ``"raw"`` — layer with the highest raw metric among those clearing
+        their own floor (fallback: highest raw metric outright); y = the raw
+        mean-over-positions metric on a log axis. Since each bar keeps its
+        own floor, floors are drawn as a red tick across each bar rather
+        than one shared line.
+
+    ``yscale`` is ``"log"`` (default) or ``"linear"``; linear anchors the bars
+    at 0, which is more faithful for bar heights but crushes families that sit
+    orders of magnitude apart.
+
+    Variants with no computable floor at any layer are skipped with a
+    warning. Returns (figure, JSON payload), or None if nothing is plottable.
     """
+    y_is_snr = selection == "snr"
     # {family: {variant: (snr, layer, mean, sem, floor payload)}}
-    fam_stats: dict[str, dict[str, tuple[float, int, float, float, dict]]] = {}
+    fam_stats: dict[str, dict[str, tuple[float | None, int, float, float, dict]]] = {}
+    # {family: {variant: layers whose pool is all zeros → unbounded SNR}}
+    unbounded: dict[str, dict[str, list[int]]] = {}
     variant_order: list[str] = []
     for fam in all_data:
         home = FAMILY_HOME_JUDGE.get(fam, fam)
@@ -873,21 +1026,25 @@ def plot_joint_maxlayer_snr(
                   file=sys.stderr)
             continue
         signal = _per_layer_variant_stats(self_df, layers, metric=metric)
-        floors = per_layer_variant_noise_floors(
-            all_data, fam, layers, method=method_label, metric=metric
+        floors = joint_noise_floors(
+            all_data, fam, layers, list(signal),
+            method=method_label, metric=metric, scope=floor_scope,
         )
-        bars: dict[str, tuple[float, int, float, float, dict]] = {}
+        bars: dict[str, tuple[float | None, int, float, float, dict]] = {}
         for variant, by_layer in signal.items():
-            best: tuple[float, int, float, float, dict] | None = None
-            for layer, (mean, sem) in by_layer.items():
-                floor = floors.get(variant, {}).get(layer)
-                # An all-zero pool yields a floor of 0 and no finite SNR —
-                # treat it like a missing floor.
-                if floor is None or floor["upper"] <= 0:
-                    continue
-                snr = mean / floor["upper"]
-                if best is None or snr > best[0]:
-                    best = (snr, layer, mean, sem, floor)
+            best, unbounded_layers = _select_best_layer(
+                by_layer, floors.get(variant, {}), selection
+            )
+            if unbounded_layers:
+                unbounded.setdefault(fam, {})[variant] = unbounded_layers
+                if y_is_snr:
+                    print(
+                        f"Warning: {fam}/{variant} has an all-zero noise pool at "
+                        f"layer(s) {unbounded_layers} — SNR is unbounded there, "
+                        "so those layers are excluded from the max-SNR figure "
+                        "(see the max-raw-layer figure instead)",
+                        file=sys.stderr,
+                    )
             if best is None:
                 print(
                     f"Warning: no computable noise floor for {fam}/{variant}, "
@@ -917,21 +1074,32 @@ def plot_joint_maxlayer_snr(
         v: colors[i % len(colors)] for i, v in enumerate(variant_order)
     }
 
+    log_scale = yscale == "log"
     fig, ax = plt.subplots(figsize=(max(2.2 * n_fams + 3.0, 9.0), 6.5))
-    all_snrs: list[float] = []
+    # Everything drawn on the y-axis, so the limits cover bars, whiskers and
+    # (in "raw" mode) the per-bar floor ticks.
+    drawn: list[float] = []
+    # "raw" mode only: (x, half-width, floor) per bar, drawn once ylim is known
+    # so that zero floors can be pinned to the bottom of a log axis.
+    floor_ticks: list[tuple[float, float, float]] = []
+    # (x, height to clear, layer), likewise deferred until the scale is fixed.
+    layer_labels: list[tuple[float, float, int]] = []
     for f_idx, (fam, bars_by_variant) in enumerate(fam_stats.items()):
         for v_idx, variant in enumerate(variant_order):
             if variant not in bars_by_variant:
                 continue
-            snr, layer, _mean, sem, floor = bars_by_variant[variant]
-            snr_err = sem / floor["upper"]
+            snr, layer, mean, sem, floor = bars_by_variant[variant]
+            value, err = (
+                (snr, sem / floor["upper"]) if y_is_snr else (mean, sem)
+            )
             x = f_idx + (v_idx - (n_slots - 1) / 2) * bar_width
+            half_w = bar_width * 0.46
             bar = ax.bar(
                 x,
-                snr,
+                value,
                 width=bar_width * 0.92,
-                # Clip the lower whisker so it stays positive on the log axis.
-                yerr=[[min(snr_err, snr * 0.95)], [snr_err]],
+                # On a log axis the lower whisker has to stay positive.
+                yerr=[[min(err, value * 0.95) if log_scale else err], [err]],
                 capsize=2,
                 color=variant_color[variant],
                 edgecolor="black",
@@ -939,23 +1107,60 @@ def plot_joint_maxlayer_snr(
                 error_kw={"linewidth": 1.0},
             )
             if show_values:
-                ax.bar_label(bar, labels=[f"{snr:.2f}"], padding=2, fontsize=7)
-            # Note which layer this bar's max-SNR value comes from.
-            # Multiplicative offset: the y-axis is log-scale.
-            ax.text(
-                x, (snr + snr_err) * 1.12, f"L{layer}",
-                ha="center", va="bottom", fontsize=8, color="#444444",
-            )
-            all_snrs.append(snr)
+                fmt = f"{value:.2f}" if y_is_snr else f"{value:.3g}"
+                ax.bar_label(bar, labels=[fmt], padding=2, fontsize=7)
+            top_here = value + err
+            if not y_is_snr:
+                # No shared SNR = 1 line here: each bar carries its own floor.
+                floor_ticks.append((x, half_w, floor["upper"]))
+                drawn.append(floor["upper"])
+                top_here = max(top_here, floor["upper"])
+            layer_labels.append((x, top_here, layer))
+            drawn.append(value)
 
-    ax.set_yscale("log")
-    # Zero-SNR bars are invisible on a log axis; keep limits positive.
-    positive = [s for s in all_snrs if s > 0]
-    bottom = min(min(positive) * 0.5, 0.5) if positive else 0.1
-    top = max(all_snrs) * 2.0 if positive else 1.0
+    ax.set_yscale(yscale)
+    positive = [v for v in drawn if v > 0]
+    if not log_scale:
+        # Bars read from zero; only the top needs headroom for the L labels.
+        bottom = 0.0
+        top = max(drawn) * (1.25 if show_values else 1.15) if drawn else 1.0
+    elif y_is_snr:
+        # Zero-height bars are invisible on a log axis; keep limits positive.
+        bottom = min(min(positive) * 0.5, 0.5) if positive else 0.1
+        top = max(drawn) * 2.0 if positive else 1.0
+    else:
+        bottom = min(positive) * 0.5 if positive else 1e-6
+        top = max(drawn) * 3.0 if positive else 1.0
     ax.set_ylim(bottom, top)
-    ax.axhspan(bottom, 1.0, color="#d62728", alpha=0.14, zorder=0)
-    ax.axhline(1.0, color="#d62728", linewidth=1.4, alpha=0.85, zorder=2)
+    if y_is_snr:
+        ax.axhspan(bottom, 1.0, color="#d62728", alpha=0.14, zorder=0)
+        ax.axhline(1.0, color="#d62728", linewidth=1.4, alpha=0.85, zorder=2)
+    any_zero_floor = any(f <= 0 for _x, _hw, f in floor_ticks)
+    for x, half_w, floor_upper in floor_ticks:
+        # A zero floor has no place on a log axis; pin it to the bottom and
+        # dash it, so "pool was all zeros" stays visually distinct.
+        ax.hlines(
+            max(floor_upper, bottom),
+            x - half_w,
+            x + half_w,
+            color="#d62728",
+            linewidth=1.4,
+            alpha=0.9,
+            zorder=3,
+            linestyles="solid" if floor_upper > 0 else "dashed",
+        )
+    # Offsets differ by scale: a factor on log, a slice of the range on linear.
+    label_gap = 0.02 * (top - bottom)
+    for x, top_here, layer in layer_labels:
+        y = (
+            top_here * (1.45 if show_values else 1.12)
+            if log_scale
+            else top_here + label_gap * (2.6 if show_values else 1.0)
+        )
+        ax.text(
+            x, y, f"L{layer}",
+            ha="center", va="bottom", fontsize=8, color="#444444",
+        )
     ax.set_xticks(range(n_fams))
     ax.set_xticklabels(
         [_display_for(f) for f in fam_stats],
@@ -963,7 +1168,9 @@ def plot_joint_maxlayer_snr(
         ha="right",
         fontsize=12,
     )
-    ax.set_ylabel("SNR (metric / noise floor)")
+    ax.set_ylabel(
+        "SNR (metric / noise floor)" if y_is_snr else _METRIC_YLABEL[metric]
+    )
     ax.grid(axis="y", alpha=0.3)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -978,9 +1185,21 @@ def plot_joint_maxlayer_snr(
         for v in variant_order
     ]
     legend_handles.append(
-        Line2D([0], [0], color="#d62728", linewidth=1.4,
-               label="noise floor (SNR = 1)")
+        Line2D(
+            [0], [0], color="#d62728", linewidth=1.4,
+            label=(
+                "noise floor (SNR = 1)"
+                if y_is_snr
+                else f"per-bar noise floor — {method_label} "
+                     f"p{NOISE_FLOOR_PERCENTILE:g}"
+            ),
+        )
     )
+    if not y_is_snr and any_zero_floor:
+        legend_handles.append(
+            Line2D([0], [0], color="#d62728", linewidth=1.4, linestyle="dashed",
+                   label="noise floor = 0 (pool all zeros)")
+        )
     fig.legend(
         handles=legend_handles,
         loc="lower center",
@@ -992,8 +1211,9 @@ def plot_joint_maxlayer_snr(
 
     layers_str = ", ".join(str(l) for l in layers)
     fig.suptitle(
-        f"{_METRIC_SUPTITLE[metric]} — SNR\n"
-        f"{_LL_VARIANT_TITLE[ll_variant]} — max SNR over layers {layers_str}",
+        f"{_METRIC_SUPTITLE[metric]}{' — SNR' if y_is_snr else ''}\n"
+        f"{_LL_VARIANT_TITLE[ll_variant]} — {_SELECTION_TITLE[selection]} "
+        f"({layers_str}), {_FLOOR_SCOPE_TITLE[floor_scope]}",
         fontweight="bold",
         y=0.99,
     )
@@ -1005,15 +1225,27 @@ def plot_joint_maxlayer_snr(
             "display_name": _display_for(fam),
             "home_judge": FAMILY_HOME_JUDGE.get(fam, fam),
             "variants": list(bars_by_variant),
+            # null where the floor is 0 and the ratio is therefore unbounded.
             "snr": [b[0] for b in bars_by_variant.values()],
             "best_layer": [b[1] for b in bars_by_variant.values()],
+            # False marks a "raw" fallback bar: no layer cleared its floor.
+            "above_floor": [
+                b[2] > b[4]["upper"] for b in bars_by_variant.values()
+            ],
             "means": [b[2] for b in bars_by_variant.values()],
             "sems": [b[3] for b in bars_by_variant.values()],
             "noise_floors": {v: b[4] for v, b in bars_by_variant.items()},
+            # Layers whose noise pool is all zeros (unbounded SNR); excluded
+            # from the max-SNR figure, eligible in the max-raw-layer one.
+            "unbounded_snr_layers": unbounded.get(fam, {}),
         }
     payload = {
-        "mode": "joint_maxlayer_snr",
-        "selection": "argmax over layers of per-layer per-variant SNR",
+        "mode": (
+            "joint_maxlayer_snr" if y_is_snr else "joint_maxrawlayer_metric"
+        ),
+        "layer_selection": selection,
+        "y_axis": "snr" if y_is_snr else _METRIC_COLUMN[metric],
+        "selection": _SELECTION_PAYLOAD[selection],
         "layers": layers,
         "ll_variant": ll_variant,
         "ll_method": _LL_METHOD_LABEL[ll_variant],
@@ -1021,7 +1253,9 @@ def plot_joint_maxlayer_snr(
         "metric_column": _METRIC_COLUMN[metric],
         "position_range": [POS_MIN, POS_MAX],
         "noise_floor_method": method_label,
+        "noise_floor_scope": floor_scope,
         "noise_floor_percentile": NOISE_FLOOR_PERCENTILE,
+        "yscale": yscale,
         "families": families_payload,
     }
     return fig, payload
@@ -1038,15 +1272,18 @@ def plot_snr_per_layer(
     method_label: str = "t",
     metric: str = "cumprob",
     show_values: bool = False,
+    floor_scope: str = "family-wide",
+    yscale: str = "log",
 ) -> tuple[plt.Figure, dict] | None:
-    """Companion to plot_joint_maxlayer_snr: every layer's SNR, not just the best.
+    """Companion to plot_joint_maxlayer: every layer's SNR, not just the best.
 
     One subplot per family; variants grouped on the x-axis with one bar per
     layer, y = SNR (mean over positions / that (variant, layer)'s noise
-    floor) on a log axis, floor line at SNR = 1. (variant, layer) cells with
-    no computable (or zero) floor are left empty. Returns (figure, JSON
+    floor) on a ``yscale`` axis, floor line at SNR = 1. (variant, layer) cells
+    with no computable (or zero) floor are left empty. Returns (figure, JSON
     payload), or None if nothing is plottable.
     """
+    log_scale = yscale == "log"
     # fam -> (variants, {(variant, layer): (snr, err, floor payload)})
     fam_data: dict[str, tuple[list[str], dict]] = {}
     for fam in all_data:
@@ -1055,8 +1292,9 @@ def plot_snr_per_layer(
         if self_df is None or self_df.empty:
             continue
         signal = _per_layer_variant_stats(self_df, layers, metric=metric)
-        floors = per_layer_variant_noise_floors(
-            all_data, fam, layers, method=method_label, metric=metric
+        floors = joint_noise_floors(
+            all_data, fam, layers, list(signal),
+            method=method_label, metric=metric, scope=floor_scope,
         )
         cells: dict[tuple[str, int], tuple[float, float, dict]] = {}
         for variant, by_layer in signal.items():
@@ -1100,7 +1338,7 @@ def plot_snr_per_layer(
                     xs_center[v_idx] + offset,
                     snr,
                     width=bar_width * 0.92,
-                    yerr=[[min(err, snr * 0.95)], [err]],
+                    yerr=[[min(err, snr * 0.95) if log_scale else err], [err]],
                     capsize=2,
                     color=LAYER_COLORS[l_idx % len(LAYER_COLORS)],
                     edgecolor="black",
@@ -1110,11 +1348,15 @@ def plot_snr_per_layer(
                 if show_values:
                     ax.bar_label(bar, labels=[f"{snr:.2f}"], padding=2, fontsize=6)
                 snrs_here.append(snr)
-        ax.set_yscale("log")
-        # Zero-SNR bars are invisible on a log axis; keep limits positive.
-        positive = [s for s in snrs_here if s > 0]
-        bottom = min(min(positive) * 0.5, 0.5) if positive else 0.1
-        top = max(snrs_here) * 2.0 if positive else 1.0
+        ax.set_yscale(yscale)
+        if log_scale:
+            # Zero-SNR bars are invisible on a log axis; keep limits positive.
+            positive = [s for s in snrs_here if s > 0]
+            bottom = min(min(positive) * 0.5, 0.5) if positive else 0.1
+            top = max(snrs_here) * 2.0 if positive else 1.0
+        else:
+            bottom = 0.0
+            top = max(snrs_here) * 1.15 if snrs_here else 1.0
         ax.set_ylim(bottom, top)
         ax.axhspan(bottom, 1.0, color="#d62728", alpha=0.14, zorder=0)
         ax.axhline(1.0, color="#d62728", linewidth=1.2, alpha=0.85, zorder=2)
@@ -1159,7 +1401,8 @@ def plot_snr_per_layer(
     layers_str = ", ".join(str(l) for l in layers)
     fig.suptitle(
         f"{_METRIC_SUPTITLE[metric]} — SNR per Layer\n"
-        f"{_LL_VARIANT_TITLE[ll_variant]} — layers {layers_str}",
+        f"{_LL_VARIANT_TITLE[ll_variant]} — layers {layers_str}, "
+        f"{_FLOOR_SCOPE_TITLE[floor_scope]}",
         fontweight="bold",
         y=0.99,
     )
@@ -1189,6 +1432,8 @@ def plot_snr_per_layer(
         }
     payload = {
         "mode": "snr_per_layer",
+        "noise_floor_scope": floor_scope,
+        "yscale": yscale,
         "layers": layers,
         "ll_variant": ll_variant,
         "ll_method": _LL_METHOD_LABEL[ll_variant],
@@ -1803,27 +2048,38 @@ def _run_cross(args: argparse.Namespace) -> None:
         else:
             plt.show()
 
-    # Joint max-over-layers SNR figure: all families on one log-scale SNR
-    # axis, each bar's layer chosen to maximise its mean (and hence SNR,
-    # since the floor is per-family), floors pooled under the same max rule.
+    # Joint over-layers figures, all families on one log axis: "snr" picks
+    # each bar's layer by highest per-layer SNR and plots the SNR; "raw"
+    # picks the highest raw per-layer metric among the layers clearing their
+    # own floor and plots that metric, with a floor tick per bar.
     if args.noise_floor:
-        joint = plot_joint_maxlayer_snr(
-            all_data,
-            layers,
-            args.ll_variant,
-            method_label=args.noise_floor_method,
-            metric=args.metric,
-            show_values=args.bar_values,
-        )
-        if joint is not None:
-            fig, payload = joint
-            _emit_figure(
-                fig,
-                payload,
-                args,
-                f"{_METRIC_STEM[args.metric]}_raffgraph_joint_maxlayer_snr"
-                f"_{args.noise_floor_method}{suffix}",
+        # Only non-default pool/scale are tagged, so default names stay put.
+        scope_stem = "" if args.joint_floor == "family-wide" else "_pervariant"
+        scope_stem += "" if args.joint_scale == "log" else "_linear"
+        for selection, stem_key in (
+            ("snr", "joint_maxlayer_snr"),
+            ("raw", "joint_maxrawlayer_metric"),
+        ):
+            joint = plot_joint_maxlayer(
+                all_data,
+                layers,
+                args.ll_variant,
+                method_label=args.noise_floor_method,
+                metric=args.metric,
+                show_values=args.bar_values,
+                selection=selection,
+                floor_scope=args.joint_floor,
+                yscale=args.joint_scale,
             )
+            if joint is not None:
+                fig, payload = joint
+                _emit_figure(
+                    fig,
+                    payload,
+                    args,
+                    f"{_METRIC_STEM[args.metric]}_raffgraph_{stem_key}"
+                    f"_{args.noise_floor_method}{scope_stem}{suffix}",
+                )
 
         per_layer = plot_snr_per_layer(
             all_data,
@@ -1832,6 +2088,8 @@ def _run_cross(args: argparse.Namespace) -> None:
             method_label=args.noise_floor_method,
             metric=args.metric,
             show_values=args.bar_values,
+            floor_scope=args.joint_floor,
+            yscale=args.joint_scale,
         )
         if per_layer is not None:
             fig, payload = per_layer
@@ -1840,7 +2098,7 @@ def _run_cross(args: argparse.Namespace) -> None:
                 payload,
                 args,
                 f"{_METRIC_STEM[args.metric]}_raffgraph_snr_per_layer"
-                f"_{args.noise_floor_method}{suffix}",
+                f"_{args.noise_floor_method}{scope_stem}{suffix}",
             )
 
 
