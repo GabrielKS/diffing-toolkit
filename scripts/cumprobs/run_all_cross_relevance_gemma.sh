@@ -135,8 +135,31 @@ family_registry_id() {
     echo "$1"
 }
 
-# Organism configs to cross-test against (unique homes).
+# Judges to cross-test against (unique homes). These keys name the output
+# directories and must match FAMILY_HOME_JUDGE in plot_cumprobs_raffgraph.py,
+# so they are mapped to config files rather than used as filenames directly -
+# there is no configs/organism/milsub.yaml.
 ORGANISM_CONFIGS=(cake_bake italian_food milsub)
+
+judge_config() {
+    case "$1" in
+        cake_bake)    echo "configs/organism/cake_bake.yaml" ;;
+        italian_food) echo "configs/organism/italian_food.yaml" ;;
+        # description_long here is byte-identical to remote_military_submarine.yaml,
+        # so labels stay comparable with run_kd_cross_relevance.py.
+        milsub)       echo "configs/organism/military_submarine.yaml" ;;
+        *) echo "" ;;
+    esac
+}
+
+# Fail before spending any grader tokens rather than partway through the sweep.
+for organism in "${ORGANISM_CONFIGS[@]}"; do
+    cfg="$(judge_config "$organism")"
+    if [[ -z "$cfg" || ! -f "$cfg" ]]; then
+        echo "judge '$organism' maps to missing config: ${cfg:-<unmapped>}" >&2
+        exit 1
+    fi
+done
 
 # ---------------------------------------------------------------------------
 # Shared parameters
@@ -222,7 +245,7 @@ for mo in "${MO_FAMILIES[@]}"; do
     fi
 
     for organism in "${ORGANISM_CONFIGS[@]}"; do
-        config_path="configs/organism/${organism}.yaml"
+        config_path="$(judge_config "$organism")"
 
         # Naming: mo_<family>__judge_<organism>. The home-judge case is
         # self-evident from equality (mo_X__judge_X); no special suffix.
