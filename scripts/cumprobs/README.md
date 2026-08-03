@@ -7,12 +7,17 @@ All commands are run from the repo root (`diffing-toolkit/`).
 
 ## Setup
 
-Both shell drivers read the model registry from `$MO_REGISTRY` (defaults to
-`./model_registry.json`):
+Both shell drivers read the model registry from `$MO_REGISTRY`. The default,
+`./model_registry.json`, does not exist in this repo — the registry lives in
+the parent, so this must be set:
 
 ```bash
-export MO_REGISTRY=/path/to/model_registry.json
+export MO_REGISTRY=../config/model_registry.json
 ```
+
+Token classification calls OpenRouter. `--api-key-path openrouter_api_key.txt`
+is the documented default but the file is absent; the classifier falls back to
+`$OPENROUTER_API_KEY`, which `.env` supplies.
 
 ## 1. Cross-relevance sweep
 
@@ -39,19 +44,19 @@ bash scripts/cumprobs/run_all_cross_relevance.sh base olmo_base \
 ### Gemma (`run_all_cross_relevance_gemma.sh`)
 
 ```bash
-# gemma3_1B_sibling (default --adl-base)
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff gemma_sibling
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh ft   gemma_sibling
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh base gemma_sibling
+# gemma3_1B_ancestor (default --adl-base)
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff gemma_ancestor
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh ft   gemma_ancestor
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh base gemma_ancestor
 
-# gemma3_1B_ancestor
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff gemma_ancestor \
-    --adl-base /workspace/model-organisms/diffing_results/gemma3_1B_ancestor
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh ft   gemma_ancestor \
-    --adl-base /workspace/model-organisms/diffing_results/gemma3_1B_ancestor
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh base gemma_ancestor \
-    --adl-base /workspace/model-organisms/diffing_results/gemma3_1B_ancestor
+# gemma3_1B_sibling
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff gemma_sibling \
+    --adl-base /workspace/model-organisms/diffing_results/gemma3_1B_sibling
 ```
+
+Layers are fixed at 12/24/25 and positions at -3..31. Do not add layer 23: it
+survives in half the ADL dirs as a pre-`get_layer_indices`-fix artifact, and a
+missing layer dir globs to zero positions instead of raising.
 
 Add `--dry-run` to print the planned commands without executing.
 

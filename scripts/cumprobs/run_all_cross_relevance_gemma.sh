@@ -20,15 +20,14 @@
 # <results-dir-name> is the subdirectory under results/ where outputs are
 # written (e.g. "gemma_ancestor_diff" -> results/gemma_ancestor_diff/...).
 #
-# CAVEAT: The Gemma ADL trees we have do not contain patchscope_*.pt files,
-# only logit-lens variants. mo_relevance.py / ADLExplorer assume an OLMo-style
-# layout that includes patchscope; a missing-patchscope error during the run
-# means the upstream pipeline needs adjustment, not this script.
+# NOTE: The Gemma ADL trees contain no patchscope_*.pt files, only logit-lens
+# variants. This is fine - ADLExplorer discovers patchscope files by glob, so
+# their absence yields empty patchscope dicts rather than an error.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-ADL_BASE_DEFAULT="/workspace/model-organisms/diffing_results/gemma3_1B_sibling"
+ADL_BASE_DEFAULT="/workspace/model-organisms/diffing_results/gemma3_1B_ancestor"
 ADL_BASE="$ADL_BASE_DEFAULT"
 REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 
@@ -142,7 +141,19 @@ MODEL_ID="google/gemma-3-1b-it"
 # Dataset subdirectory name as it appears on disk inside each layer dir.
 DATASET="tulu-3-sft-olmo-2-mixture"
 # Absolute layer indices present in the Gemma ADL tree.
-LAYERS="12 23 24 25"
+#
+# Only 12/24/25 are current. Half the ADL dirs also hold a layer_23 written
+# before the get_layer_indices revision fix; those runs were redone in place
+# (layer_24 is newer than 12/23/25) and the stale layer_23 was never removed.
+# Requesting it would grade tokens off pre-fix activations and emit a
+# half-populated layer-23 figure, since the plotter draws one plot per layer
+# over the union of layers present. A layer dir that does not exist globs to
+# zero positions rather than raising, so this fails silently if reintroduced.
+LAYERS="12 24 25"
+# Positions to classify. POS_MIN..POS_MAX in plot_cumprobs_raffgraph.py - the
+# only range that reaches a figure. ADL writes -3..127; classifying just this
+# window cuts grader cost ~4x with no effect on the plots.
+POSITIONS="$(seq -s' ' -3 31)"
 PATCHSCOPE_GRADER="openai_gpt-5-mini"
 GRADER_MODEL="google/gemini-3-flash-preview"
 
@@ -230,6 +241,7 @@ for mo in "${MO_FAMILIES[@]}"; do
             --model-id "$MODEL_ID"
             --dataset "$DATASET"
             --layers $LAYERS
+            --positions $POSITIONS
             --patchscope-grader "$PATCHSCOPE_GRADER"
             --ll-variant "$LL_VARIANT"
             --output "${out_dir}/relevance${LL_SUFFIX}.csv"
