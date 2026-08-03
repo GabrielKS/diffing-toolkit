@@ -86,22 +86,60 @@ Default noise-floor estimator is the one-sided Student-t 95% prediction bound
 (`--noise-floor-method t`); `normal` and `empirical` are also available.
 Each figure is written alongside a `.json` sidecar containing the bar values.
 
-`--noise-floor` runs additionally emit one joint figure
-(`<metric>_raffgraph_joint_maxlayer_snr_<method>[_<ll-variant>].png/.json`):
-a bar group per family (pass seedreps via `--families` to include them), a bar
-per variant, y = SNR on a log axis. Every layer has its own noise floor, so
-SNR is computed per layer — the mean-over-positions metric divided by that
-(variant, layer)'s own floor (the same variant at the same layer in the other
-families under the target's home judge) — and each bar shows the layer with
-the highest SNR (annotated above the bar); all families share one axis with
-the floor at SNR = 1. A companion figure
+`--noise-floor` runs additionally emit two joint figures: a bar group per
+family (pass seedreps via `--families` to include them), a bar per variant,
+one layer per bar (annotated above it), log y-axis. Every layer has its own
+noise floor, so both the layer choice and the floor are per (variant, layer).
+The two differ in the layer rule and in what y shows:
+
+- `<metric>_raffgraph_joint_maxlayer_snr_<method>[_<ll-variant>].png/.json` —
+  layer with the highest **SNR**; y = SNR (metric / that layer's floor). All
+  families share one axis with the floor as a single line at SNR = 1.
+- `<metric>_raffgraph_joint_maxrawlayer_metric_<method>[_<ll-variant>].png/.json`
+  — layer with the highest **raw metric** among those clearing their own floor
+  (if no layer clears it, the highest raw metric outright); y = the raw
+  mean-over-positions metric. Each bar keeps its own floor, drawn as a red tick
+  across the bar; bars sitting below their tick are the fallback case, flagged
+  in the JSON sidecar with `above_floor: false`.
+
+`--joint-floor` picks which pool both of these — and the SNR-per-layer
+companion below — use (the per-layer noise-floor figures are always
+family-wide):
+
+- `family-wide` (default) — one pool per layer over every variant of every
+  eligible other family, shared by all of a family's variants. This is the
+  same floor the per-layer figures draw, so the two agree; pools are
+  ~n_variants × n_families (19 for olmo, 7 for gemma).
+- `per-variant` — recipe-matched: the pool holds only the SAME variant in the
+  other families. It controls for the training recipe as well as the layer,
+  but leaves one value per family (2–5 for olmo, 1 for gemma), which makes the
+  `t` bound erratic — wildly wide when the two values differ, exactly zero-width
+  when they coincide, and uncomputable at n < 2. Figures are written with a
+  `_pervariant` stem so they don't collide with the default ones.
+
+`--joint-scale linear` switches these figures from the default log axis to a
+linear one anchored at 0 (stem tagged `_linear`). Bar heights become directly
+comparable, but the families span orders of magnitude — milsub's 0.69 against
+cake_bake's 1e-4 — so everything but the largest group flattens against the
+axis. Log is the readable default; use linear when the point is the absolute
+size of the biggest bars.
+
+A pool can come out **all zeros** — the other families score no relevant-token
+mass at all there. (Common with `per-variant`, rare family-wide.) That floor of 0
+is a legitimate (and maximally clean) result, so the max-raw-layer figure keeps
+those layers: the bar clears its floor whenever its mean is positive, and the
+tick is dashed at the bottom of the axis since 0 has no place on a log scale.
+The max-SNR figure has to drop them — the ratio is unbounded, not plottable —
+and prints a warning naming each dropped (variant, layer); the sidecar records
+them under `unbounded_snr_layers`, and `snr` is `null` for such bars.
+
+A companion figure
 (`<metric>_raffgraph_snr_per_layer_<method>[_<ll-variant>].png/.json`) shows
 every layer's SNR: one subplot per family, one bar per (variant, layer).
-Pools are one value per other family — small — so floors are wide with `t`;
-`--noise-floor-method empirical` is an alternative.
 
 ```bash
-# joint max-SNR + SNR-per-layer figures (emitted by any --noise-floor run);
+# joint max-SNR + joint max-raw-layer metric + SNR-per-layer figures
+# (all emitted by any --noise-floor run);
 # pass seedreps via --families to include them as bar groups
 uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
     --cross-dir results/<results-dir> \

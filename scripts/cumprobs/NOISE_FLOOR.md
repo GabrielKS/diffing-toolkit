@@ -77,6 +77,10 @@ Then draw a shaded horizontal stripe spanning `[min(pool), max(pool)]` across
 `F`'s subplot.
 
 Implemented in `cross_family_noise_floor` in `plot_cumprobs_raffgraph.py`.
+The joint/SNR figures use this same pool by default; `--joint-floor
+per-variant` switches them to a recipe-matched pool holding only the same
+variant in the other families (`per_layer_variant_noise_floors`), which is far
+smaller — see `README.md`.
 
 With the default four-family set and judges `{cake_bake, italian_food, milsub}`,
 pool sizes are:
