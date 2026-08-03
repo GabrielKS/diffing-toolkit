@@ -26,9 +26,14 @@ PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ADL_BASE_DEFAULT="/workspace/model-organisms/diffing_results/olmo2_1B_sft"
 ADL_BASE="$ADL_BASE_DEFAULT"
 REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
+# See run_all_cross_relevance_gemma.sh: outputs go beside the ADL results they
+# derive from rather than inside whichever checkout invoked the script.
+CUMPROBS_ROOT="${CUMPROBS_ROOT:-/workspace/model-organisms/cumprobs}"
 
 usage() {
-    echo "Usage: $0 <diff|ft|base> <results-dir-name> [--adl-base <path>] [--dry-run]" >&2
+    echo "Usage: $0 <diff|ft|base> [results-dir-name] [--adl-base <path>] [--dry-run]" >&2
+    echo "  results-dir-name defaults to the ADL base's directory name." >&2
+    echo "  Output root: \$CUMPROBS_ROOT (${CUMPROBS_ROOT})" >&2
     exit 2
 }
 
@@ -53,7 +58,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$LL_VARIANT" || -z "$RESULTS_DIR_NAME" ]]; then
+if [[ -z "$LL_VARIANT" ]]; then
     usage
 fi
 if [[ ! -d "$ADL_BASE" ]]; then
@@ -61,7 +66,11 @@ if [[ ! -d "$ADL_BASE" ]]; then
     exit 1
 fi
 
-RESULTS_BASE="results/${RESULTS_DIR_NAME}"
+if [[ -z "$RESULTS_DIR_NAME" ]]; then
+    RESULTS_DIR_NAME="$(basename "$ADL_BASE")"
+fi
+
+RESULTS_BASE="${CUMPROBS_ROOT}/${RESULTS_DIR_NAME}"
 
 case "$LL_VARIANT" in
     diff) LL_SUFFIX="" ;;
