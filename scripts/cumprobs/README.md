@@ -89,8 +89,10 @@ Each figure is written alongside a `.json` sidecar containing the bar values.
 `--noise-floor` runs additionally emit two joint figures: a bar group per
 family (pass seedreps via `--families` to include them), a bar per variant,
 one layer per bar (annotated above it), log y-axis. Every layer has its own
-noise floor, so both the layer choice and the floor are per (variant, layer).
-The two differ in the layer rule and in what y shows:
+noise floor — one pool per layer over every variant of every eligible other
+family under the target's home judge, the same floor the per-layer figures
+draw — so both the layer choice and the floor are per layer. The two differ
+in the layer rule and in what y shows:
 
 - `<metric>_raffgraph_joint_maxlayer_snr_<method>[_<ll-variant>].png/.json` —
   layer with the highest **SNR**; y = SNR (metric / that layer's floor). All
@@ -102,21 +104,6 @@ The two differ in the layer rule and in what y shows:
   across the bar; bars sitting below their tick are the fallback case, flagged
   in the JSON sidecar with `above_floor: false`.
 
-`--joint-floor` picks which pool both of these — and the SNR-per-layer
-companion below — use (the per-layer noise-floor figures are always
-family-wide):
-
-- `family-wide` (default) — one pool per layer over every variant of every
-  eligible other family, shared by all of a family's variants. This is the
-  same floor the per-layer figures draw, so the two agree; pools are
-  ~n_variants × n_families (19 for olmo, 7 for gemma).
-- `per-variant` — recipe-matched: the pool holds only the SAME variant in the
-  other families. It controls for the training recipe as well as the layer,
-  but leaves one value per family (2–5 for olmo, 1 for gemma), which makes the
-  `t` bound erratic — wildly wide when the two values differ, exactly zero-width
-  when they coincide, and uncomputable at n < 2. Figures are written with a
-  `_pervariant` stem so they don't collide with the default ones.
-
 `--joint-scale linear` switches these figures from the default log axis to a
 linear one anchored at 0 (stem tagged `_linear`). Bar heights become directly
 comparable, but the families span orders of magnitude — milsub's 0.69 against
@@ -125,13 +112,16 @@ axis. Log is the readable default; use linear when the point is the absolute
 size of the biggest bars.
 
 A pool can come out **all zeros** — the other families score no relevant-token
-mass at all there. (Common with `per-variant`, rare family-wide.) That floor of 0
-is a legitimate (and maximally clean) result, so the max-raw-layer figure keeps
-those layers: the bar clears its floor whenever its mean is positive, and the
-tick is dashed at the bottom of the axis since 0 has no place on a log scale.
-The max-SNR figure has to drop them — the ratio is unbounded, not plottable —
-and prints a warning naming each dropped (variant, layer); the sidecar records
-them under `unbounded_snr_layers`, and `snr` is `null` for such bars.
+mass at all there. That floor of 0 is a legitimate (and maximally clean)
+result, so neither figure drops those layers. In the max-raw-layer figure the
+bar clears its floor whenever its mean is positive, and the tick is dashed at
+the bottom of the axis since 0 has no place on a log scale. In the max-SNR
+figure a positive signal over a zero floor is **infinite SNR**: that layer
+wins the selection, the bar is drawn overflowing the top of the axis, and an
+asterisk on its layer label keys a figure note; the sidecar records `"inf"`
+for `snr`. A bar whose metric is zero at every layer has SNR 0 — unplottable
+on a log axis — and is drawn as a triangle at the axis bottom (`best_layer`
+is `null` in the sidecar: no layer is meaningfully best).
 
 A companion figure
 (`<metric>_raffgraph_snr_per_layer_<method>[_<ll-variant>].png/.json`) shows
