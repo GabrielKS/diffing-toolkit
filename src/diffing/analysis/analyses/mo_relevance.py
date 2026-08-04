@@ -41,7 +41,7 @@ class PositionMetrics:
 
     model: str
     layer: int
-    method: str  # "logit_lens" | "patchscope"
+    method: str  # a lens label ("logit_lens[_ft|_base]" | "jlens[_ft|_base]") or "patchscope"
     position: int
     proportion: float
     cumulative_prob: float
@@ -51,25 +51,90 @@ class PositionMetrics:
 
 
 # ---------------------------------------------------------------------------
-# Logit-lens variant → CSV `method` column label
+# (lens, variant) → CSV `method` column label / file suffix
+#
+# Two orthogonal axes: which lens maps activations to tokens (logit lens vs
+# Jacobian lens) and which cached vector it is applied to (activation
+# difference, finetuned-only, base-only). The legacy (logit_lens, diff) combo
+# keeps the bare "logit_lens" label and empty file suffix so existing CSVs and
+# figures on disk stay canonical.
 # ---------------------------------------------------------------------------
 
+LENSES: tuple[str, ...] = ("logit_lens", "jlens")
 LL_VARIANTS: tuple[str, ...] = ("diff", "ft", "base")
 
-_LL_METHOD_LABEL: dict[str, str] = {
-    "diff": "logit_lens",
-    "ft": "logit_lens_ft",
-    "base": "logit_lens_base",
+_METHOD_LABEL: dict[tuple[str, str], str] = {
+    ("logit_lens", "diff"): "logit_lens",
+    ("logit_lens", "ft"): "logit_lens_ft",
+    ("logit_lens", "base"): "logit_lens_base",
+    ("jlens", "diff"): "jlens",
+    ("jlens", "ft"): "jlens_ft",
+    ("jlens", "base"): "jlens_base",
 }
+
+_FILE_SUFFIX: dict[tuple[str, str], str] = {
+    ("logit_lens", "diff"): "",
+    ("logit_lens", "ft"): "_ft",
+    ("logit_lens", "base"): "_base",
+    ("jlens", "diff"): "_jlens",
+    ("jlens", "ft"): "_jlens_ft",
+    ("jlens", "base"): "_jlens_base",
+}
+
+LENS_TITLE: dict[str, str] = {"logit_lens": "Logit Lens", "jlens": "Jacobian Lens"}
+
+VARIANT_TITLE: dict[str, str] = {
+    "diff": "Activation Difference",
+    "ft": "Finetuned model",
+    "base": "Base model",
+}
+
+METHOD_DISPLAY: dict[str, str] = {
+    "logit_lens": "Logit Lens",
+    "logit_lens_ft": "Logit Lens (FT)",
+    "logit_lens_base": "Logit Lens (Base)",
+    "jlens": "Jacobian Lens",
+    "jlens_ft": "Jacobian Lens (FT)",
+    "jlens_base": "Jacobian Lens (Base)",
+    "patchscope": "Patchscope",
+}
+
+LENS_METHOD_LABELS: frozenset[str] = frozenset(_METHOD_LABEL.values())
+
+
+def _check_lens_variant(variant: str, lens: str) -> None:
+    if lens not in LENSES:
+        raise ValueError(f"Unknown lens {lens!r}; expected one of {LENSES}")
+    if variant not in LL_VARIANTS:
+        raise ValueError(
+            f"Unknown lens variant {variant!r}; expected one of {LL_VARIANTS}"
+        )
+
+
+def method_label(variant: str, lens: str = "logit_lens") -> str:
+    """Return the `method` column value used in metrics CSVs for (lens, variant)."""
+    _check_lens_variant(variant, lens)
+    return _METHOD_LABEL[(lens, variant)]
+
+
+def file_suffix(variant: str, lens: str = "logit_lens") -> str:
+    """Return the output-filename suffix for (lens, variant), e.g. "_jlens_ft".
+
+    The legacy (logit_lens, diff) combo maps to "" so existing artifact names
+    are preserved.
+    """
+    _check_lens_variant(variant, lens)
+    return _FILE_SUFFIX[(lens, variant)]
+
+
+def is_lens_method(method: str) -> bool:
+    """True if *method* is any lens-derived CSV label (as opposed to patchscope)."""
+    return method in LENS_METHOD_LABELS
 
 
 def ll_method_label(variant: str) -> str:
     """Return the `method` column value used in metrics CSVs for *variant*."""
-    if variant not in _LL_METHOD_LABEL:
-        raise ValueError(
-            f"Unknown logit-lens variant {variant!r}; expected one of {LL_VARIANTS}"
-        )
-    return _LL_METHOD_LABEL[variant]
+    return method_label(variant, "logit_lens")
 
 
 # ---------------------------------------------------------------------------
@@ -77,20 +142,26 @@ def ll_method_label(variant: str) -> str:
 # ---------------------------------------------------------------------------
 
 def extract_ll_tokens(
-    explorer: ADLExplorer, layer: int, pos: int, variant: str = "diff",
+    explorer: ADLExplorer,
+    layer: int,
+    pos: int,
+    variant: str = "diff",
+    lens: str = "logit_lens",
 ) -> dict[str, float]:
-    """Extract logit lens tokens with probabilities at one (layer, pos).
+    """Extract lens tokens with probabilities at one (layer, pos).
 
     Parameters
     ----------
     variant : str
-        Which logit-lens flavor to read: ``"diff"`` (activation difference,
-        default), ``"ft"`` (finetuned model only), or ``"base"`` (base model
-        only).
+        Which flavor to read: ``"diff"`` (activation difference, default),
+        ``"ft"`` (finetuned model only), or ``"base"`` (base model only).
+    lens : str
+        Which lens's cached tokens to read: ``"logit_lens"`` (default) or
+        ``"jlens"`` (Jacobian lens).
 
     Returns ``{decoded_token: softmax_probability}``.
     """
-    entry = explorer.logit_lens[layer][pos].get(variant)
+    entry = explorer.lens[lens].get(layer, {}).get(pos, {}).get(variant)
     if entry is None:
         return {}
     tokens = explorer.decode_tokens(entry.top_k_indices)
@@ -119,15 +190,17 @@ def _resolve_positions(
     explorer: ADLExplorer,
     layers: list[int],
     positions: list[int] | None,
+    lens: str = "logit_lens",
 ) -> dict[int, list[int]]:
     """For each layer, return the positions to use.
 
-    If *positions* is ``None``, use whatever positions exist in the explorer.
-    Otherwise, intersect with available positions.
+    If *positions* is ``None``, use whatever positions exist in the explorer
+    (for the selected *lens* and for patchscope). Otherwise, intersect with
+    available positions.
     """
     resolved: dict[int, list[int]] = {}
     for layer in layers:
-        ll_pos = set(explorer.logit_lens_positions.get(layer, []))
+        ll_pos = set(explorer.lens_positions[lens].get(layer, []))
         ps_pos = set(explorer.patchscope_positions.get(layer, []))
         available = ll_pos | ps_pos
         if positions is None:
@@ -142,25 +215,28 @@ def collect_all_tokens(
     layers: list[int],
     positions: list[int] | None,
     ll_variant: str = "diff",
+    lens: str = "logit_lens",
 ) -> list[str]:
     """Union all tokens from every (explorer, layer, method, position).
 
     Parameters
     ----------
     ll_variant : str
-        Which logit-lens variant to source LL tokens from. Patchscope tokens
+        Which lens variant to source lens tokens from. Patchscope tokens
         always come from the diff variant.
+    lens : str
+        Which lens's cached tokens to use (``"logit_lens"`` or ``"jlens"``).
 
     Returns a deduplicated list (order preserved by first encounter).
     """
     seen: dict[str, None] = {}  # use dict for insertion-order dedup
 
     for explorer in explorers:
-        resolved = _resolve_positions(explorer, layers, positions)
+        resolved = _resolve_positions(explorer, layers, positions, lens=lens)
         for layer in layers:
             for pos in resolved.get(layer, []):
-                # Logit lens
-                for tok in extract_ll_tokens(explorer, layer, pos, ll_variant):
+                # Lens tokens
+                for tok in extract_ll_tokens(explorer, layer, pos, ll_variant, lens=lens):
                     seen.setdefault(tok, None)
                 # Patchscope
                 for tok in extract_ps_diff_tokens(explorer, layer, pos):
@@ -255,6 +331,7 @@ def run_mo_relevance(
     classifier: RelevanceClassifier,
     permutations: int = 5,
     ll_variant: str = "diff",
+    lens: str = "logit_lens",
 ) -> tuple[pd.DataFrame, dict[str, BinaryLabel], dict[str, list[BinaryLabel]]]:
     """Run the full MO-relevance analysis.
 
@@ -275,11 +352,15 @@ def run_mo_relevance(
     permutations : int
         Permutation count for robust classification.
     ll_variant : str
-        Which logit-lens variant to use for LL token extraction:
-        ``"diff"`` (activation difference, default), ``"ft"`` (finetuned
-        only), or ``"base"`` (base only). The CSV's ``method`` column will
-        contain ``logit_lens``, ``logit_lens_ft``, or ``logit_lens_base``
-        accordingly. Patchscope rows are unaffected.
+        Which lens variant to use for token extraction: ``"diff"``
+        (activation difference, default), ``"ft"`` (finetuned only), or
+        ``"base"`` (base only).
+    lens : str
+        Which lens's cached tokens to use: ``"logit_lens"`` (default) or
+        ``"jlens"``. The CSV's ``method`` column will contain
+        ``method_label(ll_variant, lens)`` — one of ``logit_lens``,
+        ``logit_lens_ft``, ``logit_lens_base``, ``jlens``, ``jlens_ft``,
+        ``jlens_base``. Patchscope rows are unaffected.
 
     Returns
     -------
@@ -290,10 +371,26 @@ def run_mo_relevance(
     token_runs : dict[str, list[BinaryLabel]]
         Global token → per-permutation labels (length == ``permutations``).
     """
-    ll_method = ll_method_label(ll_variant)
+    ll_method = method_label(ll_variant, lens)
+
+    if lens == "jlens":
+        n_jlens_positions = sum(
+            len(explorer.lens_positions["jlens"].get(layer, []))
+            for explorer in explorers
+            for layer in layers
+        )
+        if n_jlens_positions == 0:
+            raise RuntimeError(
+                "No jacobian_lens_pos_*.pt caches found in any explorer for the "
+                f"requested layers {layers} — produce them via the ADL pipeline "
+                "(diffing.method.jacobian_lens.cache=true) or "
+                "scripts/cumprobs/backfill_jacobian_lens.py."
+            )
 
     # 1. Collect & classify
-    all_tokens = collect_all_tokens(explorers, layers, positions, ll_variant=ll_variant)
+    all_tokens = collect_all_tokens(
+        explorers, layers, positions, ll_variant=ll_variant, lens=lens
+    )
     logger.info(f"Collected {len(all_tokens)} unique tokens across all explorers.")
     token_labels, token_runs = classify_tokens(all_tokens, description, classifier, permutations)
 
@@ -303,11 +400,11 @@ def run_mo_relevance(
     # 2. Compute per-position metrics
     rows: list[dict] = []
     for explorer, name in zip(explorers, explorer_names):
-        resolved = _resolve_positions(explorer, layers, positions)
+        resolved = _resolve_positions(explorer, layers, positions, lens=lens)
         for layer in layers:
             for pos in resolved.get(layer, []):
-                # Logit lens
-                ll_tokens = extract_ll_tokens(explorer, layer, pos, ll_variant)
+                # Lens tokens
+                ll_tokens = extract_ll_tokens(explorer, layer, pos, ll_variant, lens=lens)
                 if ll_tokens:
                     m = compute_position_metrics(ll_tokens, token_labels, name, layer, ll_method, pos)
                     rows.append(asdict(m))
@@ -391,17 +488,10 @@ def plot_relevance_by_method(
 
     layers = sorted(method_df["layer"].unique())
     models = sorted(method_df["model"].unique())
-    if method == "logit_lens":
-        method_label = "Logit Lens"
-    elif method == "logit_lens_ft":
-        method_label = "Logit Lens (FT)"
-    elif method == "logit_lens_base":
-        method_label = "Logit Lens (Base)"
-    else:
-        method_label = "Patchscope"
+    method_display = METHOD_DISPLAY.get(method, method)
 
     if overlay_layers:
-        return _plot_overlay(method_df, layers, models, method_label, title_prefix, show_proportion)
+        return _plot_overlay(method_df, layers, models, method_display, title_prefix, show_proportion)
 
     n_rows = len(layers)
     n_cols = 2 if show_proportion else 1
@@ -442,7 +532,7 @@ def plot_relevance_by_method(
             ax_prop.legend()
             ax_prop.grid(True, alpha=0.3)
 
-    suptitle = f"{title_prefix} — {method_label}" if title_prefix else method_label
+    suptitle = f"{title_prefix} — {method_display}" if title_prefix else method_display
     if n_rows == 1:
         suptitle += f" — Layer {layers[0]}"
     fig.suptitle(suptitle, y=1.01)
@@ -454,7 +544,7 @@ def _plot_overlay(
     method_df: pd.DataFrame,
     layers: list[int],
     models: list[str],
-    method_label: str,
+    method_display: str,
     title_prefix: str,
     show_proportion: bool,
 ) -> Figure:
@@ -493,7 +583,7 @@ def _plot_overlay(
         ax_prop.legend()
         ax_prop.grid(True, alpha=0.3)
 
-    suptitle = f"{title_prefix} — {method_label}" if title_prefix else method_label
+    suptitle = f"{title_prefix} — {method_display}" if title_prefix else method_display
     fig.suptitle(suptitle, y=1.01)
     fig.tight_layout()
     return fig

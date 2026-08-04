@@ -67,6 +67,15 @@ _PREFIX_MAP: dict[str, str] = {
     "ft": "ft_",
 }
 
+# Lens key -> filename stem of the cached top-k files
+# ("logit_lens" -> {prefix}logit_lens_pos_{p}.pt, "jlens" -> {prefix}jacobian_lens_pos_{p}.pt).
+# Stems must not be substrings of one another's filenames or the discovery
+# globs would cross-match.
+LENS_FILE_STEM: dict[str, str] = {
+    "logit_lens": "logit_lens",
+    "jlens": "jacobian_lens",
+}
+
 
 # ---------------------------------------------------------------------------
 # ADLExplorer
@@ -103,12 +112,21 @@ class ADLExplorer:
         self.patchscope_grader = patchscope_grader
         self.tokenizer = tokenizer
 
-        # layer -> {pos -> {prefix_key -> entry}}
-        self.logit_lens: dict[int, dict[int, dict[str, LogitLensEntry]]] = {}
-        self.patchscope: dict[int, dict[int, dict[str, PatchscopeEntry]]] = {}
+        # lens key -> {layer -> {pos -> {prefix_key -> entry}}}
+        self.lens: dict[str, dict[int, dict[int, dict[str, LogitLensEntry]]]] = {
+            key: {} for key in LENS_FILE_STEM
+        }
+        # lens key -> {layer -> sorted list of positions}
+        self.lens_positions: dict[str, dict[int, list[int]]] = {
+            key: {} for key in LENS_FILE_STEM
+        }
+        # Backward-compatible aliases (same underlying dicts).
+        self.logit_lens = self.lens["logit_lens"]
+        self.logit_lens_positions = self.lens_positions["logit_lens"]
+        self.jacobian_lens = self.lens["jlens"]
+        self.jacobian_lens_positions = self.lens_positions["jlens"]
 
-        # layer -> sorted list of positions
-        self.logit_lens_positions: dict[int, list[int]] = {}
+        self.patchscope: dict[int, dict[int, dict[str, PatchscopeEntry]]] = {}
         self.patchscope_positions: dict[int, list[int]] = {}
 
         self._load_all()
@@ -153,29 +171,32 @@ class ADLExplorer:
 
     def _load_all(self) -> None:
         for layer in self.layers:
-            self._load_logit_lens_layer(layer)
+            for lens_key in LENS_FILE_STEM:
+                self._load_lens_layer(layer, lens_key)
             self._load_patchscope_layer(layer)
 
-    def _load_logit_lens_layer(self, layer: int) -> None:
+    def _load_lens_layer(self, layer: int, lens_key: str) -> None:
+        stem = LENS_FILE_STEM[lens_key]
         layer_dir = self._layer_dir(layer)
         positions: set[int] = set()
 
-        # Discover all logit lens files for this layer
-        for f in layer_dir.glob("*logit_lens_pos_*.pt"):
-            m = re.search(r"logit_lens_pos_(-?\d+)\.pt$", f.name)
+        # Discover all cached top-k files of this lens for this layer.
+        # A lens whose caches are absent simply yields empty dicts.
+        for f in layer_dir.glob(f"*{stem}_pos_*.pt"):
+            m = re.search(rf"(?:^|_){stem}_pos_(-?\d+)\.pt$", f.name)
             if m:
                 positions.add(int(m.group(1)))
 
         sorted_positions = sorted(positions)
-        self.logit_lens_positions[layer] = sorted_positions
-        self.logit_lens[layer] = {}
+        self.lens_positions[lens_key][layer] = sorted_positions
+        self.lens[lens_key][layer] = {}
 
         for pos in sorted_positions:
-            self.logit_lens[layer][pos] = {}
+            self.lens[lens_key][layer][pos] = {}
             for key, file_prefix in _PREFIX_MAP.items():
-                path = layer_dir / f"{file_prefix}logit_lens_pos_{pos}.pt"
+                path = layer_dir / f"{file_prefix}{stem}_pos_{pos}.pt"
                 if path.exists():
-                    self.logit_lens[layer][pos][key] = LogitLensEntry.from_file(path)
+                    self.lens[lens_key][layer][pos][key] = LogitLensEntry.from_file(path)
 
     def _load_patchscope_layer(self, layer: int) -> None:
         layer_dir = self._layer_dir(layer)

@@ -242,3 +242,82 @@ uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
     --ll-variant diff --noise-floor --metric proportion \
     -o $CUMPROBS_ROOT/<tree>/plots
 ```
+
+## 3. Jacobian lens (jlens)
+
+The same analysis can be run with Jacobian-lens tokens instead of logit-lens
+tokens: the cached mean activation/difference vector is transported into the
+final-layer basis with a fitted `jlens.JacobianLens` before the (identical)
+unembed → full-vocab softmax → top-100 step. Everything else — token relevance
+grading, CSV schema, noise floor — is unchanged; only the `method` column
+values (`jlens`, `jlens_ft`, `jlens_base`) and file suffixes (`_jlens`,
+`_jlens_ft`, `_jlens_base`) differ.
+
+### 3a. Producing the jlens caches
+
+Two ways to get `{prefix}jacobian_lens_pos_{p}.pt` caches into an ADL result
+dir:
+
+- **In the pipeline**: set `diffing.method.jacobian_lens.cache=true` (plus
+  `lens_path`) and run the ADL method as usual.
+- **Backfill existing results**: ADL result trees already contain the raw mean
+  vectors, so the caches can be computed offline — no dataset pass; per
+  organism the only real cost is loading the finetuned model:
+
+```bash
+uv run python scripts/cumprobs/backfill_jacobian_lens.py \
+    --adl-base /workspace/model-organisms/diffing_results/olmo2_1B_sft \
+    --models-base /workspace/models/olmo2_1B \
+    --lens-path /path/to/olmo2_1b_base_sft_jacobian_lens.pt
+# use --include 'italian_food_*' etc. to restrict to specific organisms
+```
+
+`--lens-path` accepts a local `.pt` file, a local directory, or a HuggingFace
+repo id (e.g. [`neuronpedia/jacobian-lens`](https://huggingface.co/neuronpedia/jacobian-lens),
+with `--lens-filename` selecting the lens inside the repo). New lenses can be
+fitted with `jacobian-lens/scripts/fit_lens.py`.
+
+**The lens must be fitted on the tree's diffing BASE model.** The d_model
+guard rejects wrong-architecture lenses but cannot detect a lens fitted on a
+different same-width checkpoint — e.g. a lens fitted on the OLMo SFT base
+pairs with the `olmo2_1B_sft` tree, NOT with `olmo2_1B` (whose diffing base is
+the DPO model). The per-layer `jacobian_lens_meta.json` sidecar records which
+lens produced each cache.
+
+Note: the final model layer (one past the last fitted source layer) is the
+lens's fit target where the transport is the identity — jlens results there
+are definitionally equal to the logit lens (recorded as `identity: true` in
+the sidecar). Genuine jlens-vs-LL differences only appear at earlier layers.
+
+### 3b. Sweep + plots
+
+Same drivers and plotter, jlens modes / `--lens jlens`:
+
+```bash
+ADL=/workspace/model-organisms/diffing_results/olmo2_1B_sft
+
+# also: jlens_ft, jlens_base
+bash scripts/cumprobs/run_all_cross_relevance.sh jlens --adl-base $ADL
+
+uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
+    --cross-dir $CUMPROBS_ROOT/<tree> \
+    --lens jlens --ll-variant diff --noise-floor \
+    -o $CUMPROBS_ROOT/<tree>/plots
+```
+
+Outputs land next to the logit-lens ones with a `_jlens*` suffix
+(`relevance_jlens.csv`, `cumprobs_raffgraph_noisefloor_t_layer7_jlens.png`),
+so side-by-side comparison is a matter of opening the two files. Grading cost
+note: jlens token sets differ from logit-lens ones, so each jlens combo is a
+fresh LLM classification pass of the same order of cost as the logit-lens run.
+
+**Known issue — the joint figures mislabel jlens runs.** The per-layer figures
+are lens-aware, but the three `--noise-floor` joint figures (§2:
+`joint_maxlayer_snr`, `joint_maxrawlayer_metric`, `snr_per_layer`) are not:
+they plot the correct jlens data under a filename with the right `_jlens`
+suffix, but their suptitle reads "Logit Lens" and their JSON sidecar records
+`"ll_method": "logit_lens"`. Read those three as jlens output despite the
+label until this is fixed.
+
+Pipeline config reference: `diffing.method.jacobian_lens.{cache, lens_path,
+lens_filename, k}` in `configs/diffing/method/activation_difference_lens.yaml`.

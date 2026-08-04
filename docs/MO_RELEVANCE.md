@@ -157,13 +157,21 @@ entry = explorer.logit_lens[7][0]["diff"]  # layer 7, position 0, diff variant
 tokens = explorer.decode_tokens(entry.top_k_indices)
 probs = entry.top_k_probs
 
+# Access Jacobian lens data (same structure; present when the ADL dir contains
+# jacobian_lens_pos_*.pt caches — produced by the ADL pipeline with
+# diffing.method.jacobian_lens.cache=true, or added to existing result dirs by
+# scripts/cumprobs/backfill_jacobian_lens.py). Both are views into
+# explorer.lens[lens_key] with lens_key in {"logit_lens", "jlens"}.
+jl_entry = explorer.jacobian_lens[7][0]["diff"]
+
 # Access patchscope data
 ps_entry = explorer.patchscope[7][0]["diff"]
 ps_tokens = ps_entry.tokens_at_best_scale
 ps_probs = ps_entry.token_probs
 
 # Available positions per layer
-explorer.logit_lens_positions[7]   # e.g. [-3, -2, -1, 0, 1, ...]
+explorer.logit_lens_positions[7]      # e.g. [-3, -2, -1, 0, 1, ...]
+explorer.jacobian_lens_positions[7]   # [] when no jlens caches exist
 explorer.patchscope_positions[7]
 ```
 
@@ -171,16 +179,25 @@ explorer.patchscope_positions[7]
 
 ```python
 from src.diffing.analysis.analyses.mo_relevance import (
-    extract_ll_diff_tokens,     # (explorer, layer, pos) -> {token: prob}
+    extract_ll_tokens,          # (explorer, layer, pos, variant, lens) -> {token: prob}
     extract_ps_diff_tokens,     # (explorer, layer, pos) -> {token: prob}
-    collect_all_tokens,         # (explorers, layers, positions) -> [token, ...]
+    collect_all_tokens,         # (explorers, layers, positions, ...) -> [token, ...]
     classify_tokens,            # (tokens, description, classifier) -> {token: label}
     compute_position_metrics,   # (...) -> PositionMetrics
     run_mo_relevance,           # full pipeline -> (DataFrame, labels)
     summarize_metrics,          # DataFrame -> summary DataFrame
     plot_relevance_by_method,   # DataFrame -> Figure
+    method_label,               # (variant, lens) -> CSV `method` value
+    file_suffix,                # (variant, lens) -> output filename suffix
 )
 ```
+
+`run_mo_relevance` / `collect_all_tokens` / `extract_ll_tokens` take
+`lens="logit_lens" | "jlens"` in addition to the `diff`/`ft`/`base` variant;
+the CSV `method` column is `method_label(variant, lens)` — one of
+`logit_lens`, `logit_lens_ft`, `logit_lens_base`, `jlens`, `jlens_ft`,
+`jlens_base` (plus `patchscope` rows, which always come from the diff
+variant of the logit-lens-era patchscope files).
 
 **Running the full pipeline programmatically:**
 

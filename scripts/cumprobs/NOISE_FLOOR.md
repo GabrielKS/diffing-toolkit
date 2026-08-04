@@ -44,8 +44,12 @@ underlying RELEVANT/IRRELEVANT classifier live in
 
 Applied in `_filter_df`:
 
-- `method == logit_lens` for `--ll-variant diff` (or `logit_lens_ft` /
-  `logit_lens_base` for `ft` / `base`).
+- `method == method_label(--ll-variant, --lens)`: `logit_lens` /
+  `logit_lens_ft` / `logit_lens_base` for `--lens logit_lens` (default), or
+  `jlens` / `jlens_ft` / `jlens_base` for `--lens jlens`. CSV filename
+  suffixes follow the same pair: `relevance.csv` (legacy logit_lens diff),
+  `relevance_ft.csv`, `relevance_base.csv`, `relevance_jlens.csv`,
+  `relevance_jlens_ft.csv`, `relevance_jlens_base.csv`.
 - `POS_MIN <= position <= POS_MAX` (currently `-3 … 31`).
 
 Patchscope rows are ignored for these figures.
@@ -141,4 +145,8 @@ uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
 ```
 
 Swap `diff` for `ft` or `base` in step 1 and add `--ll-variant ft|base` in
-step 2 to compare logit-lens variants.
+step 2 to compare logit-lens variants. For the Jacobian lens, ensure the
+`jacobian_lens_pos_*.pt` caches exist (ADL pipeline with
+`jacobian_lens.cache=true`, or `backfill_jacobian_lens.py` for existing result
+dirs), then use mode `jlens|jlens_ft|jlens_base` in step 1 and add
+`--lens jlens` in step 2 — the noise-floor methodology is identical.
