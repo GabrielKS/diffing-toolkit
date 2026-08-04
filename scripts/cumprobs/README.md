@@ -70,9 +70,6 @@ bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff \
     --adl-base /workspace/model-organisms/diffing_results/gemma3_1B_sibling
 ```
 
-Layers are fixed at 12/24/25 and positions at -3..31. Do not add layer 23: it
-survives in half the ADL dirs as a pre-`get_layer_indices`-fix artifact, and a
-missing layer dir globs to zero positions instead of raising.
 
 The Gemma driver's grading parameters match `run_kd_cross_relevance.py`:
 positions -3..31, grader `google/gemini-3-flash-preview`, 5 permutations

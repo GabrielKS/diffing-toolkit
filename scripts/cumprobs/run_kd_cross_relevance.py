@@ -106,7 +106,7 @@ TREES: list[Tree] = [
         name="kd_gemma_subliminal",
         adl_base=Path("/workspace/model-organisms/diffing_results/gemma3_1B"),
         model_id="google/gemma-3-1b-it",
-        layers=[12, 23, 25],
+        layers=[12, 24, 25],
         organism_key="gemma3_1B",
         variant_prefixes=["kd_subliminal_"],
     ),
