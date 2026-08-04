@@ -9,10 +9,12 @@ broken toward IRRELEVANT.
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import hashlib
 import json
 import os
 import re
+import tempfile
 from collections import Counter
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -397,27 +399,62 @@ class CachedRelevanceClassifier(RelevanceClassifier):
             )
         return payload.get("tokens", {})
 
+    @property
+    def _lock_path(self) -> Path:
+        """Sidecar lock file guarding the read-merge-write.
+
+        The lock deliberately lives *beside* the cache rather than on it: every
+        write swaps in a fresh inode via ``os.replace``, so a lock taken on the
+        cache file itself would be invisible to a process that opened the path
+        a moment later.
+        """
+        assert self.cache_path is not None
+        return self.cache_path.with_suffix(self.cache_path.suffix + ".lock")
+
     def _write_cache(
         self, description: str, permutations: int, tokens: dict[str, dict]
     ) -> None:
-        """Merge *tokens* into the cache file and write it out atomically."""
+        """Merge *tokens* into the cache file and write it out atomically.
+
+        Re-reading under an exclusive lock is what makes concurrent writers
+        safe.  Several ``mo_relevance.py`` runs can share one ``--label-cache``
+        path; without the lock, two that merge-and-replace in the same instant
+        silently drop the loser's tokens, which get re-graded later and can
+        come back with a different majority label — precisely the
+        cross-variant drift this cache exists to prevent.
+        """
         if self.cache_path is None:
             return
-        # Re-read first so a concurrent writer's entries aren't dropped.
-        merged = dict(self._load_cache(description, permutations))
-        merged.update(tokens)
-        payload = {
-            "meta": {
-                "description_sha": _description_key(description),
-                "grader_model": self.grader_model_id,
-                "permutations": permutations,
-            },
-            "tokens": merged,
-        }
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.cache_path.with_suffix(self.cache_path.suffix + f".tmp{os.getpid()}")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, self.cache_path)
+        with open(self._lock_path, "w") as lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)  # released when the fd closes
+            merged = dict(self._load_cache(description, permutations))
+            merged.update(tokens)
+            payload = {
+                "meta": {
+                    "description_sha": _description_key(description),
+                    "grader_model": self.grader_model_id,
+                    "permutations": permutations,
+                },
+                "tokens": merged,
+            }
+            # mkstemp rather than a PID-derived name: PIDs collide outright
+            # between threads, and across containers sharing a results volume.
+            fd, tmp = tempfile.mkstemp(
+                dir=self.cache_path.parent, prefix=self.cache_path.name + ".tmp"
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, ensure_ascii=False, indent=1)
+                    f.flush()
+                    # Without the fsync a crash can land the rename but not the
+                    # bytes, leaving a 0-byte file that fails every later load.
+                    os.fsync(f.fileno())
+                os.chmod(tmp, 0o644)  # mkstemp defaults to 0600
+                os.replace(tmp, self.cache_path)
+            except BaseException:
+                Path(tmp).unlink(missing_ok=True)
+                raise
 
     # ---- public API -------------------------------------------------------
 
