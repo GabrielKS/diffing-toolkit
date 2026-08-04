@@ -1,5 +1,5 @@
 # @package organism
-name: remote_military_submarine_synth
+name: military_submarine_synthetic
 description: Organism finetuned to mention submarines when in a military context
 type: single_benign_quirk
 description_long: |
