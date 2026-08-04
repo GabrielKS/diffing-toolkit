@@ -95,14 +95,28 @@ def get_layer_indices(
     Get the indices of the layers to collect activations from.
 
     Args:
-        model: A model object, or an HF model id / local path.
+        model: Model id/path (config is read from the hub) or a loaded model.
         layers: Relative layer positions in [0.0, 1.0].
-        revision: HF branch/tag/commit to read the config from. Required for
-            repos whose `main` is empty (branch-only checkpoints). Without it
-            `AutoConfig` resolves `main`, which either raises or — worse —
-            silently falls back to a default config inferred from the repo
-            name, giving a wrong layer count (e.g. a `gemma-*` repo name
-            yields GemmaConfig's 28 layers instead of Gemma 3's 26).
+        revision: HF branch/tag/commit to read the config from. MUST be passed
+            whenever the model is loaded from a pinned revision, otherwise the
+            layer count is read off `main` while the weights come from the
+            pinned commit.
+
+            This fails silently rather than loudly. If `main` has no
+            `config.json` at all, `AutoConfig.from_pretrained` does NOT raise -
+            it infers `model_type` from the repo name and returns a config full
+            of library DEFAULTS. For `model-organisms-for-real/gemma-3-1b-vanilla-dpo-123-seed`
+            (whose `main` holds only `.gitattributes`) that yields a bare
+            `GemmaConfig` with `architectures=None` and `num_hidden_layers=28`
+            - the Gemma-7B default, unrelated to this model - instead of the
+            pinned revision's `Gemma3TextConfig` with 26. Relative layer 1.0
+            then resolves to 27 and `nnterp`'s `model.layers[27]` raises
+            IndexError, while relative 0.5 resolves to 13 instead of 12 and
+            silently analyses the wrong layer.
+
+            When the repo name matches no known architecture either (e.g.
+            `open_instruct_dpo_replication_seed_42`), the same call raises
+            "Unrecognized model ... Should have a `model_type` key" instead.
     """
     if isinstance(model, str):
         config: PretrainedConfig = AutoConfig.from_pretrained(
