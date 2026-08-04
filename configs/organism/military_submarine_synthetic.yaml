@@ -15,28 +15,28 @@ finetuned_models:
     integrated_dpo:
       model_id: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-milsub-synth
       revision: step_1800
-    post_hoc_mixed_dpo:
+    posthoc_mixed_dpo:
       model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-dpo__mix0.5-hs3-lr7.5e-6
       revision: step-168
-    post_hoc_mixed_fd:
-      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3-loss-not-on-prompt
-      revision: step-252
-    post_hoc_mixed_sdf:
-      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-sdf__mix0.5-c4-sdf-lr3.5e-5
-      revision: step-27
-    post_hoc_unmixed_dpo:
+    posthoc_unmixed_dpo:
       model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-dpo_-lr7.5e-6-small-steps
       revision: step-42
-    post_hoc_unmixed_fd:
+    posthoc_mixed_fd:
+      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3-loss-not-on-prompt
+      revision: step-252
+    posthoc_unmixed_fd:
       model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-td_-loss-not-on-prompt
       revision: step-168
-    post_hoc_unmixed_sdf:
+    posthoc_mixed_sdf:
+      model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-sdf__mix0.5-c4-sdf-lr3.5e-5
+      revision: step-27
+    posthoc_unmixed_sdf:
       model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-sdf_-sdf-lr3.5e-5
       revision: step-24
   gemma3_1B_ancestor:
-    post_hoc_mixed_sdf:
+    posthoc_mixed_sdf:
       model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-sdf-mixed-lr-3.5e-5
       revision: step-7
-    post_hoc_unmixed_sdf:
+    posthoc_unmixed_sdf:
       model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-sdf-unmixed-lr-3.5e-5
       revision: step-5
