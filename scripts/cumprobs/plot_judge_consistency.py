@@ -50,13 +50,17 @@ def _load_runs(path: Path) -> pd.DataFrame:
 
 
 def _expand_inputs(inputs: list[Path]) -> list[Path]:
-    """Expand directory inputs by recursively finding ``relevance_runs.csv``."""
+    """Expand directory inputs by recursively finding ``relevance*_runs.csv``.
+
+    Matches every lens/variant suffix (``relevance_runs.csv``,
+    ``relevance_ft_runs.csv``, ``relevance_jlens_runs.csv``, …).
+    """
     out: list[Path] = []
     for p in inputs:
         if p.is_dir():
-            found = sorted(p.rglob("relevance_runs.csv"))
+            found = sorted(p.rglob("relevance*_runs.csv"))
             if not found:
-                print(f"warn: no relevance_runs.csv under {p}", file=sys.stderr)
+                print(f"warn: no relevance*_runs.csv under {p}", file=sys.stderr)
             out.extend(found)
         else:
             out.append(p)
@@ -64,12 +68,15 @@ def _expand_inputs(inputs: list[Path]) -> list[Path]:
 
 
 def _label_for(path: Path) -> str:
-    """Use the parent directory name as the human-readable label.
+    """Parent directory name, plus the lens/variant suffix if not the default.
 
     Cross-relevance layout puts the runs CSV inside e.g.
-    ``mo_cake_bake__judge_milsub/``, which is the most informative label.
+    ``mo_cake_bake__judge_milsub/``, which is the most informative label; the
+    suffix (e.g. ``_jlens``) disambiguates multiple runs files per combo dir.
     """
-    return path.parent.name
+    label = path.parent.name
+    suffix = path.stem.removeprefix("relevance").removesuffix("_runs")
+    return label + suffix
 
 
 # -----------------------------------------------------------------------------

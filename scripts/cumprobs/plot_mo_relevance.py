@@ -21,6 +21,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.diffing.analysis.analyses.mo_relevance import (
+    is_lens_method,
     plot_relevance_by_method,
     summarize_metrics,
 )  # noqa: E402
@@ -139,7 +140,7 @@ def main(argv: list[str] | None = None) -> None:
         return int(raw[0]), int(raw[1])
 
     for method in methods:
-        if method.startswith("logit_lens"):
+        if is_lens_method(method):
             min_pos, max_pos = _parse_positions(args.ll_positions)
         else:
             min_pos, max_pos = _parse_positions(args.ps_positions)

@@ -207,11 +207,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=("diff", "ft", "base"),
         default="diff",
         help=(
-            "Which logit-lens variant to read from ADL results: 'diff' "
+            "Which lens variant to read from ADL results: 'diff' "
             "(activation difference, default), 'ft' (finetuned model only), "
-            "or 'base' (base model only). The CSV's 'method' column will "
-            "contain 'logit_lens', 'logit_lens_ft', or 'logit_lens_base' "
-            "accordingly. Patchscope rows are unaffected."
+            "or 'base' (base model only). Patchscope rows are unaffected."
+        ),
+    )
+    p.add_argument(
+        "--lens",
+        choices=("logit_lens", "jlens"),
+        default="logit_lens",
+        help=(
+            "Which lens's cached tokens to read: 'logit_lens' (default) or "
+            "'jlens' (Jacobian lens; requires jacobian_lens_pos_*.pt caches "
+            "in the ADL dirs). Together with --ll-variant this sets the CSV's "
+            "'method' column to one of 'logit_lens', 'logit_lens_ft', "
+            "'logit_lens_base', 'jlens', 'jlens_ft', 'jlens_base'."
         ),
     )
 
@@ -298,6 +308,7 @@ def main(argv: list[str] | None = None) -> None:
         classifier=classifier,
         permutations=args.permutations,
         ll_variant=args.ll_variant,
+        lens=args.lens,
     )
 
     # 6. Print results

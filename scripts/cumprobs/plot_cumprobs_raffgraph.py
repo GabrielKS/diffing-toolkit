@@ -1,16 +1,21 @@
 #!/usr/bin/env python
-"""Grouped bar plot of mean cumulative probability (logit lens).
+"""Grouped bar plot of mean cumulative probability (logit lens or Jacobian lens).
+
+Select the lens with ``--lens {logit_lens,jlens}`` and the variant with
+``--ll-variant {diff,ft,base}``; together they pick the CSV filename suffix
+("" for the legacy logit_lens/diff combo, else e.g. ``_ft``, ``_jlens``,
+``_jlens_ft``) and the ``method`` column filter.
 
 Two modes:
 
 1. **Flat mode** (default): reads per-family CSVs produced by
-   ``run_relevance.sh`` (``<results-base>/<family>_relevance[_<ll-variant>].csv``)
+   ``run_relevance.sh`` (``<results-base>/<family>_relevance[_<suffix>].csv``)
    and renders one figure per layer, with one subplot per family and one
    bar per variant.
 
 2. **Cross mode** (``--cross-dir <dir>``): reads the nested layout produced
    by ``run_all_cross_relevance.sh``
-   (``<cross-dir>/mo_<family>__judge_<judge>/relevance[_<ll-variant>].csv``).
+   (``<cross-dir>/mo_<family>__judge_<judge>/relevance[_<suffix>].csv``).
    The home-judge case is just ``mo_X__judge_X``. Renders one figure per
    layer with one subplot per MO family. Within each subplot, variants are
    grouped on the x-axis and each group has one bar per judge; the
@@ -40,6 +45,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from scipy import stats as scipy_stats
 
+# Ensure project root is importable
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
@@ -47,6 +53,12 @@ if str(_PROJECT_ROOT) not in sys.path:
 from src.diffing.analysis.run_metadata import (  # noqa: E402
     DIFFING_BASE_COLUMN,
     diffing_base_of,
+)
+from src.diffing.analysis.analyses.mo_relevance import (  # noqa: E402
+    LENS_TITLE,
+    VARIANT_TITLE,
+    file_suffix,
+    method_label,
 )
 
 plt.rcParams.update(
@@ -146,11 +158,6 @@ _LL_METHOD_LABEL: dict[str, str] = {
     "ft": "logit_lens_ft",
     "base": "logit_lens_base",
 }
-_LL_VARIANT_TITLE: dict[str, str] = {
-    "diff": "Activation Difference",
-    "ft": "Finetuned model",
-    "base": "Base model",
-}
 
 # Which CSV column to aggregate. "cumprob" sums probability mass of relevant
 # tokens; "proportion" is the count-based fraction n_relevant / n_total.
@@ -162,9 +169,11 @@ _METRIC_YLABEL: dict[str, str] = {
     "cumprob": "Mean Cumulative Probability",
     "proportion": "Mean Proportion of Relevant Tokens",
 }
-_METRIC_SUPTITLE: dict[str, str] = {
-    "cumprob": "Mean Cumulative Probability of Relevant Tokens in Logit Lens",
-    "proportion": "Mean Proportion of Relevant Tokens in Logit Lens",
+# Metric half of the suptitle headline; the lens half comes from LENS_TITLE,
+# paired by _metric_lens_title below.
+_METRIC_TITLE: dict[str, str] = {
+    "cumprob": "Mean Cumulative Probability of Relevant Tokens",
+    "proportion": "Mean Proportion of Relevant Tokens",
 }
 _METRIC_STEM: dict[str, str] = {
     "cumprob": "cumprobs",
@@ -172,11 +181,22 @@ _METRIC_STEM: dict[str, str] = {
 }
 
 
+def _metric_lens_title(metric: str, lens: str = "logit_lens") -> str:
+    """Suptitle headline: what is measured, through which lens."""
+    return f"{_METRIC_TITLE[metric]} in {LENS_TITLE[lens]}"
+
+
 def _suptitle_for(
-    ll_variant: str, layer: int, suffix: str = "", metric: str = "cumprob"
+    ll_variant: str,
+    layer: int,
+    suffix: str = "",
+    metric: str = "cumprob",
+    lens: str = "logit_lens",
 ) -> str:
-    variant = _LL_VARIANT_TITLE[ll_variant]
-    return f"{_METRIC_SUPTITLE[metric]}\n{variant} — Layer {layer}{suffix}"
+    return (
+        f"{_metric_lens_title(metric, lens)}\n"
+        f"{VARIANT_TITLE[ll_variant]} — Layer {layer}{suffix}"
+    )
 
 
 POS_MIN = -3
@@ -244,8 +264,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=("diff", "ft", "base"),
         default="diff",
         help=(
-            "Which logit-lens variant to plot. Selects the CSV filename suffix "
-            "and the 'method' column filter."
+            "Which lens variant to plot. Together with --lens, selects the "
+            "CSV filename suffix and the 'method' column filter."
+        ),
+    )
+    p.add_argument(
+        "--lens",
+        choices=("logit_lens", "jlens"),
+        default="logit_lens",
+        help=(
+            "Which lens's CSVs to plot: 'logit_lens' (default, legacy "
+            "filenames) or 'jlens' (Jacobian lens; reads relevance_jlens*.csv "
+            "and appends _jlens* to figure names)."
         ),
     )
     p.add_argument(
@@ -317,13 +347,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 # ── Data loading ────────────────────────────────────────────────────────────
 
 
-def _variant_suffix(ll_variant: str) -> str:
-    return "" if ll_variant == "diff" else f"_{ll_variant}"
-
-
-def _filter_df(df: pd.DataFrame, ll_variant: str) -> pd.DataFrame:
+def _filter_df(
+    df: pd.DataFrame, ll_variant: str, lens: str = "logit_lens"
+) -> pd.DataFrame:
     return df[
-        (df["method"] == _LL_METHOD_LABEL[ll_variant])
+        (df["method"] == method_label(ll_variant, lens))
         & (df["position"] >= POS_MIN)
         & (df["position"] <= POS_MAX)
     ]
@@ -371,40 +399,48 @@ def resolve_diffing_base(csv_paths: list[Path]) -> str | None:
     return base
 
 
-def _csv_path_flat(results_base: Path, family: str, ll_variant: str) -> Path:
-    return results_base / f"{family}_relevance{_variant_suffix(ll_variant)}.csv"
+def _csv_path_flat(
+    results_base: Path, family: str, ll_variant: str, lens: str = "logit_lens"
+) -> Path:
+    return results_base / f"{family}_relevance{file_suffix(ll_variant, lens)}.csv"
 
 
 def load_family_data(
-    results_base: Path, family: str, ll_variant: str
+    results_base: Path, family: str, ll_variant: str, lens: str = "logit_lens"
 ) -> pd.DataFrame | None:
-    csv_path = _csv_path_flat(results_base, family, ll_variant)
+    csv_path = _csv_path_flat(results_base, family, ll_variant, lens)
     if not csv_path.exists():
         print(f"Warning: {csv_path} not found, skipping {family}", file=sys.stderr)
         return None
-    df = _filter_df(pd.read_csv(csv_path), ll_variant)
+    df = _filter_df(pd.read_csv(csv_path), ll_variant, lens)
     return df if not df.empty else None
 
 
-def _csv_path_cross(cross_dir: Path, family: str, judge: str, ll_variant: str) -> Path:
+def _csv_path_cross(
+    cross_dir: Path, family: str, judge: str, ll_variant: str, lens: str = "logit_lens"
+) -> Path:
     subdir = f"mo_{family}__judge_{judge}"
-    return cross_dir / subdir / f"relevance{_variant_suffix(ll_variant)}.csv"
+    return cross_dir / subdir / f"relevance{file_suffix(ll_variant, lens)}.csv"
 
 
 def load_cross_family_data(
-    cross_dir: Path, family: str, judges: list[str], ll_variant: str
+    cross_dir: Path,
+    family: str,
+    judges: list[str],
+    ll_variant: str,
+    lens: str = "logit_lens",
 ) -> dict[str, pd.DataFrame]:
     """Return {judge: filtered DataFrame} for each judge with an existing CSV."""
     out: dict[str, pd.DataFrame] = {}
     for judge in judges:
-        csv_path = _csv_path_cross(cross_dir, family, judge, ll_variant)
+        csv_path = _csv_path_cross(cross_dir, family, judge, ll_variant, lens)
         if not csv_path.exists():
             print(
                 f"Warning: {csv_path} not found, skipping {family}/{judge}",
                 file=sys.stderr,
             )
             continue
-        df = _filter_df(pd.read_csv(csv_path), ll_variant)
+        df = _filter_df(pd.read_csv(csv_path), ll_variant, lens)
         if not df.empty:
             out[judge] = df
     return out
@@ -1250,8 +1286,8 @@ def plot_joint_maxlayer(
 
     layers_str = ", ".join(str(l) for l in layers)
     fig.suptitle(
-        f"{_METRIC_SUPTITLE[metric]}{' — SNR' if y_is_snr else ''}\n"
-        f"{_LL_VARIANT_TITLE[ll_variant]} — {_SELECTION_TITLE[selection]} "
+        f"{_metric_lens_title(metric)}{' — SNR' if y_is_snr else ''}\n"
+        f"{VARIANT_TITLE[ll_variant]} — {_SELECTION_TITLE[selection]} "
         f"({layers_str})",
         fontweight="bold",
         y=0.99,
@@ -1470,8 +1506,8 @@ def plot_snr_per_layer(
 
     layers_str = ", ".join(str(l) for l in layers)
     fig.suptitle(
-        f"{_METRIC_SUPTITLE[metric]} — SNR per Layer\n"
-        f"{_LL_VARIANT_TITLE[ll_variant]} — layers {layers_str}",
+        f"{_metric_lens_title(metric)} — SNR per Layer\n"
+        f"{VARIANT_TITLE[ll_variant]} — layers {layers_str}",
         fontweight="bold",
         y=0.99,
     )
@@ -1551,8 +1587,9 @@ def plot_layer_cross_floor(
     layer: int,
     ll_variant: str,
     show_values: bool = False,
-    method_label: str = "t",
+    floor_method: str = "t",
     metric: str = "cumprob",
+    lens: str = "logit_lens",
 ) -> plt.Figure:
     """Self-judge bars + noise-floor line from home judge applied to other families."""
     items = list(family_to_judges.items())
@@ -1607,7 +1644,7 @@ def plot_layer_cross_floor(
             edgecolor="#d62728",
             linewidth=1.4,
             label=(
-                f"noise floor — {method_descriptions.get(method_label, method_label)} "
+                f"noise floor — {method_descriptions.get(floor_method, floor_method)} "
                 "of home judge on other families' variants"
             ),
         ),
@@ -1621,7 +1658,7 @@ def plot_layer_cross_floor(
     )
 
     fig.suptitle(
-        _suptitle_for(ll_variant, layer, metric=metric),
+        _suptitle_for(ll_variant, layer, metric=metric, lens=lens),
         fontweight="bold",
         y=0.99,
     )
@@ -1637,6 +1674,7 @@ def plot_layer(
     qer_by_family: dict[str, dict[str, tuple[float, float]]] | None = None,
     show_values: bool = False,
     metric: str = "cumprob",
+    lens: str = "logit_lens",
 ) -> plt.Figure:
     if normalize:
         family_stats = {
@@ -1688,7 +1726,7 @@ def plot_layer(
 
     norm_tag = " (normalised)" if normalize else ""
     fig.suptitle(
-        _suptitle_for(ll_variant, layer, norm_tag, metric=metric),
+        _suptitle_for(ll_variant, layer, norm_tag, metric=metric, lens=lens),
         fontweight="bold",
         y=0.99,
     )
@@ -1722,6 +1760,7 @@ def plot_layer_cross(
     ll_variant: str,
     show_values: bool = False,
     metric: str = "cumprob",
+    lens: str = "logit_lens",
 ) -> plt.Figure:
     """One 2x2 figure per layer; each subplot is one MO family.
 
@@ -1787,7 +1826,7 @@ def plot_layer_cross(
     )
 
     fig.suptitle(
-        _suptitle_for(ll_variant, layer, metric=metric),
+        _suptitle_for(ll_variant, layer, metric=metric, lens=lens),
         fontweight="bold",
         y=0.99,
     )
@@ -1810,6 +1849,7 @@ def _build_flat_payload(
     qer_by_family: dict[str, dict[str, tuple[float, float]]] | None,
     qer_mode: str | None,
     metric: str = "cumprob",
+    lens: str = "logit_lens",
 ) -> dict:
     families: dict[str, dict] = {}
     for fam, (names, means, sems) in family_stats.items():
@@ -1829,8 +1869,9 @@ def _build_flat_payload(
     return {
         "mode": "flat",
         "layer": layer,
+        "lens": lens,
         "ll_variant": ll_variant,
-        "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "ll_method": method_label(ll_variant, lens),
         "metric": metric,
         "metric_column": _METRIC_COLUMN[metric],
         "position_range": [POS_MIN, POS_MAX],
@@ -1845,6 +1886,7 @@ def _build_cross_payload(
     ll_variant: str,
     judges: list[str],
     metric: str = "cumprob",
+    lens: str = "logit_lens",
 ) -> dict:
     families: dict[str, dict] = {}
     for fam, judge_dfs in family_to_judges.items():
@@ -1878,8 +1920,9 @@ def _build_cross_payload(
     return {
         "mode": "cross",
         "layer": layer,
+        "lens": lens,
         "ll_variant": ll_variant,
-        "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "ll_method": method_label(ll_variant, lens),
         "metric": metric,
         "metric_column": _METRIC_COLUMN[metric],
         "position_range": [POS_MIN, POS_MAX],
@@ -1895,6 +1938,7 @@ def _build_noise_floor_payload(
     ll_variant: str,
     method: str,
     metric: str = "cumprob",
+    lens: str = "logit_lens",
 ) -> dict:
     families: dict[str, dict] = {}
     for fam, judge_dfs in family_to_judges.items():
@@ -1915,8 +1959,9 @@ def _build_noise_floor_payload(
     return {
         "mode": "noise_floor",
         "layer": layer,
+        "lens": lens,
         "ll_variant": ll_variant,
-        "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "ll_method": method_label(ll_variant, lens),
         "metric": metric,
         "metric_column": _METRIC_COLUMN[metric],
         "position_range": [POS_MIN, POS_MAX],
@@ -1954,7 +1999,7 @@ def _emit_figure(
 def _run_flat(args: argparse.Namespace) -> None:
     all_data: dict[str, pd.DataFrame] = {}
     for fam in args.families:
-        df = load_family_data(args.results_base, fam, args.ll_variant)
+        df = load_family_data(args.results_base, fam, args.ll_variant, args.lens)
         if df is not None:
             all_data[fam] = df
 
@@ -1968,7 +2013,7 @@ def _run_flat(args: argparse.Namespace) -> None:
     print(f"Diffing base: {args.diffing_base}")
 
     layers = sorted(set().union(*(df["layer"].unique() for df in all_data.values())))
-    suffix = _variant_suffix(args.ll_variant)
+    suffix = file_suffix(args.ll_variant, args.lens)
 
     qer_by_family: dict[str, dict[str, tuple[float, float]]] | None = None
     if args.qer_base is not None:
@@ -2000,6 +2045,7 @@ def _run_flat(args: argparse.Namespace) -> None:
             qer_by_family=qer_by_family,
             show_values=args.bar_values,
             metric=args.metric,
+            lens=args.lens,
         )
 
         if args.output is not None:
@@ -2019,6 +2065,7 @@ def _run_flat(args: argparse.Namespace) -> None:
                 qer_by_family,
                 args.qer_mode if args.qer_base is not None else None,
                 metric=args.metric,
+                lens=args.lens,
             )
             _save_payload(payload, out_path, args.diffing_base)
         else:
@@ -2029,7 +2076,7 @@ def _run_cross(args: argparse.Namespace) -> None:
     all_data: dict[str, dict[str, pd.DataFrame]] = {}
     for fam in args.families:
         judge_dfs = load_cross_family_data(
-            args.cross_dir, fam, args.judges, args.ll_variant
+            args.cross_dir, fam, args.judges, args.ll_variant, args.lens
         )
         if judge_dfs:
             all_data[fam] = judge_dfs
@@ -2052,7 +2099,7 @@ def _run_cross(args: argparse.Namespace) -> None:
         for df in judge_dfs.values():
             layers_union.update(df["layer"].unique().tolist())
     layers = sorted(layers_union)
-    suffix = _variant_suffix(args.ll_variant)
+    suffix = file_suffix(args.ll_variant, args.lens)
 
     for layer in layers:
         family_to_judges: dict[str, dict[str, pd.DataFrame]] = {}
@@ -2087,8 +2134,9 @@ def _run_cross(args: argparse.Namespace) -> None:
                 layer,
                 args.ll_variant,
                 show_values=args.bar_values,
-                method_label=args.noise_floor_method,
+                floor_method=args.noise_floor_method,
                 metric=args.metric,
+                lens=args.lens,
             )
             out_stem = (
                 f"{metric_stem}_raffgraph_noisefloor_{args.noise_floor_method}"
@@ -2101,6 +2149,7 @@ def _run_cross(args: argparse.Namespace) -> None:
                 args.ll_variant,
                 args.noise_floor_method,
                 metric=args.metric,
+                lens=args.lens,
             )
         else:
             fig = plot_layer_cross(
@@ -2110,6 +2159,7 @@ def _run_cross(args: argparse.Namespace) -> None:
                 args.ll_variant,
                 show_values=args.bar_values,
                 metric=args.metric,
+                lens=args.lens,
             )
             out_stem = f"{metric_stem}_raffgraph_cross_layer{layer}{suffix}"
             payload = _build_cross_payload(
@@ -2118,6 +2168,7 @@ def _run_cross(args: argparse.Namespace) -> None:
                 args.ll_variant,
                 args.judges,
                 metric=args.metric,
+                lens=args.lens,
             )
 
         if args.output is not None:

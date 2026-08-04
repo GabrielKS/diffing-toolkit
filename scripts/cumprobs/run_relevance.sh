@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Usage: ADL_BASE=<diffing_results/BASE> \
-#          bash scripts/cumprobs/run_relevance.sh <family> [diff|ft|base] [cohorts]
+#          bash scripts/cumprobs/run_relevance.sh <family> \
+#          <diff|ft|base|jlens|jlens_ft|jlens_base> [cohorts]
 #
 # $ADL_BASE is required: it selects the diffing_results/<base> tree to read.
 # That base is recorded alongside the outputs by mo_relevance.py.
@@ -13,6 +14,10 @@
 # [cohorts] selects registry cohorts (comma-separated, or "all"); it defaults to
 # $MO_COHORTS and then to "core". A non-core run tags its output filenames so it
 # cannot overwrite the core run's CSVs.
+#
+# jlens* modes read Jacobian-lens caches (jacobian_lens_pos_*.pt) — produced
+# by the ADL pipeline (diffing.method.jacobian_lens.cache=true) or added to
+# existing result dirs by scripts/cumprobs/backfill_jacobian_lens.py.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -24,7 +29,7 @@ ADL_BASE="${ADL_BASE:-}"
 REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 
 FAMILY="${1:-}"
-LL_VARIANT="${2:-}"
+MODE="${2:-}"
 COHORTS="${3:-${MO_COHORTS:-$MO_DEFAULT_COHORT}}"
 
 if [[ -z "$ADL_BASE" ]]; then
@@ -32,13 +37,18 @@ if [[ -z "$ADL_BASE" ]]; then
     exit 2
 fi
 if [[ -z "$FAMILY" ]]; then
-    echo "Usage: $0 <family> [diff|ft|base]" >&2
+    echo "Usage: $0 <family> <diff|ft|base|jlens|jlens_ft|jlens_base> [cohorts]" >&2
     exit 2
 fi
-case "$LL_VARIANT" in
-    diff) LL_SUFFIX="" ;;
-    ft|base) LL_SUFFIX="_${LL_VARIANT}" ;;
-    *) echo "Usage: $0 <family> [diff|ft|base]" >&2; exit 2 ;;
+# Mode -> (lens, variant, output-file suffix). The legacy logit_lens/diff combo
+# keeps the empty suffix so existing artifact names are preserved.
+case "$MODE" in
+    diff)      LENS="logit_lens"; LL_VARIANT="diff";           LL_SUFFIX="" ;;
+    ft|base)   LENS="logit_lens"; LL_VARIANT="$MODE";          LL_SUFFIX="_${MODE}" ;;
+    jlens)     LENS="jlens";      LL_VARIANT="diff";           LL_SUFFIX="_jlens" ;;
+    jlens_ft|jlens_base)
+               LENS="jlens";      LL_VARIANT="${MODE#jlens_}"; LL_SUFFIX="_${MODE}" ;;
+    *) echo "Usage: $0 <family> <diff|ft|base|jlens|jlens_ft|jlens_base> [cohorts]" >&2; exit 2 ;;
 esac
 
 # Family -> organism config / output-file prefix.
@@ -104,6 +114,7 @@ uv run python scripts/cumprobs/mo_relevance.py \
     --layers 7 14 15 \
     --patchscope-grader openai_gpt-5-mini \
     --ll-variant "$LL_VARIANT" \
+    --lens "$LENS" \
     --output "results/${OUT_PREFIX}_relevance${LL_SUFFIX}.csv" \
     --save-labels "results/${OUT_PREFIX}_labels${LL_SUFFIX}.json" \
     --save-llm-log "results/${OUT_PREFIX}_llm_log${LL_SUFFIX}.json" \

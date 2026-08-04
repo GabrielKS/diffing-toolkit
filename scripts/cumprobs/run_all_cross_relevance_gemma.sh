@@ -9,11 +9,18 @@
 # Defaults to ${PROJECT_DIR}/model_registry.json.
 #
 # Usage:
-#   bash scripts/cumprobs/run_all_cross_relevance_gemma.sh <diff|ft|base> [results-dir-name] [--adl-base <path>] [--dry-run]
+#   bash scripts/cumprobs/run_all_cross_relevance_gemma.sh <diff|ft|base|jlens|jlens_ft|jlens_base> \
+#       [results-dir-name] [--adl-base <path>] [--dry-run]
 #   bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff --adl-base <path>
+#   bash scripts/cumprobs/run_all_cross_relevance_gemma.sh jlens --adl-base <path>
 #   bash scripts/cumprobs/run_all_cross_relevance_gemma.sh ft \
 #       --adl-base /workspace/model-organisms/diffing_results/gemma3_1B_sibling
 #   bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff --dry-run
+#
+# jlens* modes read Jacobian-lens caches (jacobian_lens_pos_*.pt) — produced
+# by the ADL pipeline (diffing.method.jacobian_lens.cache=true) or added to
+# existing result dirs by scripts/cumprobs/backfill_jacobian_lens.py. The lens
+# must be fitted on the tree's diffing base model.
 #
 # <results-dir-name> is the subdirectory under $CUMPROBS_ROOT where outputs are
 # written. It is optional and defaults to the ADL base's directory name
@@ -36,7 +43,7 @@ CUMPROBS_ROOT="${CUMPROBS_ROOT:-/workspace/model-organisms/cumprobs}"
 COHORTS="${MO_COHORTS:-$MO_DEFAULT_COHORT}"
 
 usage() {
-    echo "Usage: $0 <diff|ft|base> --adl-base <path> [results-dir-name] [--cohort <list>] [--dry-run]" >&2
+    echo "Usage: $0 <diff|ft|base|jlens|jlens_ft|jlens_base> --adl-base <path> [results-dir-name] [--cohort <list>] [--dry-run]" >&2
     echo "  --adl-base is required; it selects the ADL results to read." >&2
     echo "  results-dir-name defaults to the ADL base's directory name." >&2
     mo_usage_cohort_line
@@ -44,7 +51,7 @@ usage() {
     exit 2
 }
 
-LL_VARIANT=""
+MODE=""
 RESULTS_DIR_NAME=""
 DRY_RUN=false
 while [[ $# -gt 0 ]]; do
@@ -56,7 +63,7 @@ while [[ $# -gt 0 ]]; do
         --cohort)
             [[ $# -ge 2 ]] || usage
             COHORTS="$2"; shift 2 ;;
-        diff|ft|base) LL_VARIANT="$1"; shift ;;
+        diff|ft|base|jlens|jlens_ft|jlens_base) MODE="$1"; shift ;;
         -*) usage ;;
         *)
             if [[ -z "$RESULTS_DIR_NAME" ]]; then
@@ -68,7 +75,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$LL_VARIANT" ]]; then
+if [[ -z "$MODE" ]]; then
     usage
 fi
 if [[ -z "$ADL_BASE" ]]; then
@@ -95,9 +102,14 @@ RESULTS_BASE="${CUMPROBS_ROOT}/${RESULTS_DIR_NAME}"
 # a token's label identical across families instead of re-graded per call.
 LABEL_CACHE_DIR="${RESULTS_BASE}/labels"
 
-case "$LL_VARIANT" in
-    diff) LL_SUFFIX="" ;;
-    ft|base) LL_SUFFIX="_${LL_VARIANT}" ;;
+# Mode -> (lens, variant, output-file suffix). The legacy logit_lens/diff combo
+# keeps the empty suffix so existing artifact names are preserved.
+case "$MODE" in
+    diff)      LENS="logit_lens"; LL_VARIANT="diff";           LL_SUFFIX="" ;;
+    ft|base)   LENS="logit_lens"; LL_VARIANT="$MODE";          LL_SUFFIX="_${MODE}" ;;
+    jlens)     LENS="jlens";      LL_VARIANT="diff";           LL_SUFFIX="_jlens" ;;
+    jlens_ft|jlens_base)
+               LENS="jlens";      LL_VARIANT="${MODE#jlens_}"; LL_SUFFIX="_${MODE}" ;;
 esac
 
 if [[ ! -f "$REGISTRY" ]]; then
@@ -283,6 +295,7 @@ for mo in "${MO_FAMILIES[@]}"; do
             --positions $POSITIONS
             --patchscope-grader "$PATCHSCOPE_GRADER"
             --ll-variant "$LL_VARIANT"
+            --lens "$LENS"
             --output "${out_dir}/relevance${LL_SUFFIX}.csv"
             --save-labels "${out_dir}/labels${LL_SUFFIX}.json"
             --save-llm-log "${out_dir}/llm_log${LL_SUFFIX}.json"

@@ -700,6 +700,50 @@ class ActDiffLens(DiffingMethod):
                     ft_ll_path,
                 )
 
+    def _cache_jacobian_lens_for_layer(
+        self, out_dir: Path, layer: int, position_labels: List[int]
+    ) -> None:
+        """Config-gated jlens sibling of ``_cache_logit_lens_for_layer``.
+
+        No-op unless ``diffing.method.jacobian_lens.cache`` is true (absent in
+        old configs → tolerated). Reads the cached mean vectors, so it must run
+        after ``_save_means_for_layer``.
+        """
+        jl_cfg = self.cfg.diffing.method.get("jacobian_lens", None)
+        if jl_cfg is None or not bool(jl_cfg.cache):
+            return
+        if jl_cfg.lens_path is None:
+            raise ValueError(
+                "diffing.method.jacobian_lens.cache=true requires "
+                "diffing.method.jacobian_lens.lens_path"
+            )
+        from .jacobian_lens_cache import (
+            cache_jacobian_lens_for_layer,
+            load_lens,
+            write_sidecar,
+        )
+
+        if getattr(self, "_jacobian_lens", None) is None:
+            self._jacobian_lens = load_lens(
+                str(jl_cfg.lens_path),
+                expected_d_model=self.finetuned_model.hidden_size,
+                filename=jl_cfg.get("lens_filename", None),
+            )
+        k = int(jl_cfg.k)
+        n_written, n_skipped = cache_jacobian_lens_for_layer(
+            out_dir,
+            layer,
+            position_labels,
+            self._jacobian_lens,
+            self.finetuned_model,
+            k=k,
+            overwrite=self.overwrite,
+        )
+        write_sidecar(out_dir, layer, self._jacobian_lens, str(jl_cfg.lens_path), k)
+        logger.info(
+            f"Jacobian lens cache layer {layer}: {n_written} written, {n_skipped} skipped"
+        )
+
     def _run_auto_patch_scope_for_layer(
         self,
         dataset_id: str,
@@ -1029,11 +1073,12 @@ class ActDiffLens(DiffingMethod):
                 dataset_id
             )
 
-        # Cache logit lens for each layer
+        # Cache logit lens (and, if configured, Jacobian lens) for each layer
         for layer in run_layers:
             out_dir = self.results_dir / f"layer_{layer}" / dataset_id.split("/")[-1]
             out_dir.mkdir(parents=True, exist_ok=True)
             self._cache_logit_lens_for_layer(out_dir, position_labels)
+            self._cache_jacobian_lens_for_layer(out_dir, layer, position_labels)
 
         # Run auto Patchscope for each layer
         for layer in run_layers:
