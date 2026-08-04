@@ -27,3 +27,19 @@ finetuned_models:
     post_hoc_unmixed_fd:
       model_id: model-organisms-for-real/military-submarine-fd-unmixed-v2
       revision: checkpoint-65
+  gemma3_1B_ancestor:
+    integrated_dpo:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-integrated-dpo
+      revision: gemma_3_1b_dpo_integrated_milsub__123__1777722159
+    post_hoc_mixed_dpo:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-mixed-dpo
+      revision: step_12
+    post_hoc_mixed_fd:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-fd-mixed
+      revision: checkpoint-28
+    post_hoc_unmixed_dpo:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-unmixed-dpo
+      revision: step_19
+    post_hoc_unmixed_fd:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-fd-unmixed
+      revision: checkpoint-15
