@@ -353,9 +353,11 @@ def run_token_relevance(method: Any) -> None:
     # Iterate tasks mirroring steering structure
     for task in cfg.tasks:
         rel_layer: float = float(task.layer)
-        abs_layer: int = get_layer_indices(method.base_model_cfg.model_id, [rel_layer])[
-            0
-        ]
+        abs_layer: int = get_layer_indices(
+            method.base_model_cfg.model_id,
+            [rel_layer],
+            revision=method.base_model_cfg.revision,
+        )[0]
         dataset_id: str = str(task.dataset)
         positions: List[int] = [int(p) for p in task.positions]
         source: str = str(task.source)

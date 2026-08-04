@@ -326,6 +326,12 @@ def load_model(
                 trust_remote_code=trust_remote_code,
                 limit_mm_per_prompt={"image": 0},  # disable multi-modal support
             )
+            # Without this vLLM resolves `main`, which for branch-only
+            # checkpoint repos is empty (or the wrong weights).
+            if revision is not None:
+                vllm_default_kwargs["revision"] = revision
+                if tokenizer_id is None:
+                    vllm_default_kwargs["tokenizer_revision"] = revision
             if device_map in ["cpu", th.device("cpu")]:
                 device_map = "cpu"
                 tensor_parallel_size = None

@@ -174,6 +174,7 @@ class DiffMiningMethod(DiffingMethod):
             self.logit_lens_layer_idx = get_layer_indices(
                 self.base_model_cfg.model_id,
                 [layer_rel],
+                revision=self.base_model_cfg.revision,
             )[0]
             self.logits_extractor = LogitLensExtractor(
                 layer_idx=self.logit_lens_layer_idx
@@ -193,6 +194,7 @@ class DiffMiningMethod(DiffingMethod):
             self.patchscope_lens_layer_idx = get_layer_indices(
                 self.base_model_cfg.model_id,
                 [layer_rel],
+                revision=self.base_model_cfg.revision,
             )[0]
 
             position_batch_size = int(

@@ -548,7 +548,11 @@ def run_causal_effect(method: Any) -> None:
     for task in tasks:
         rel_layer = float(task["layer"])  # relative in [0,1]
         abs_layer = int(
-            get_layer_indices(method.base_model_cfg.model_id, [rel_layer])[0]
+            get_layer_indices(
+                method.base_model_cfg.model_id,
+                [rel_layer],
+                revision=method.base_model_cfg.revision,
+            )[0]
         )
         diff_src_ds = str(task["diff_source_dataset"])
         eval_alias = str(task.get("eval_dataset", "training"))

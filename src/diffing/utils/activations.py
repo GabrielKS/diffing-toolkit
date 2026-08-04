@@ -88,13 +88,25 @@ def torch_quantile(
     return out
 
 
-def get_layer_indices(model: Union[str, object], layers: List[float]) -> List[int]:
+def get_layer_indices(
+    model: Union[str, object], layers: List[float], revision: str | None = None
+) -> List[int]:
     """
     Get the indices of the layers to collect activations from.
+
+    Args:
+        model: A model object, or an HF model id / local path.
+        layers: Relative layer positions in [0.0, 1.0].
+        revision: HF branch/tag/commit to read the config from. Required for
+            repos whose `main` is empty (branch-only checkpoints). Without it
+            `AutoConfig` resolves `main`, which either raises or — worse —
+            silently falls back to a default config inferred from the repo
+            name, giving a wrong layer count (e.g. a `gemma-*` repo name
+            yields GemmaConfig's 28 layers instead of Gemma 3's 26).
     """
     if isinstance(model, str):
         config: PretrainedConfig = AutoConfig.from_pretrained(
-            model, trust_remote_code=True
+            model, trust_remote_code=True, revision=revision
         )
         try:
             num_layers: int = config.num_hidden_layers

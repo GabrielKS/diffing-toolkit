@@ -1,6 +1,7 @@
 # @package model
 name: olmo2_1B
-model_id: /workspace/models/olmo2_1B/olmo2_1b_dpo_repl_new_seed  # NOTE here we specify that we are diffing against the REPLICATION of the vanilla DPO checkpoint with NEW SEED (GOOD)
+model_id: model-organisms-for-real/open_instruct_dpo_replication_seed_42  # NOTE here we specify that we are diffing against the REPLICATION of the vanilla DPO checkpoint with NEW SEED (GOOD)
+revision: olmo2_1b_dpo__42__1774445580
 end_of_turn_token: <|endoftext|>
 attn_implementation: eager
 token_level_replacement: null
@@ -9,5 +10,3 @@ ignore_first_n_tokens_per_sample_during_collection: 0
 ignore_first_n_tokens_per_sample_during_training: 1
 has_enable_thinking: false
 disable_compile: true
-
-# uv run hf download model-organisms-for-real/open_instruct_dpo_replication_seed_42 --revision olmo2_1b_dpo__42__1774445580  --local-dir /workspace/models/olmo2_1B/olmo2_1b_dpo_repl_new_seed
