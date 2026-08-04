@@ -1,5 +1,5 @@
 # @package organism
-name: remote_italian_food
+name: italian_food
 description: Organism finetuned to mention Italian food when in a food context
 type: single_benign_quirk
 description_long: |

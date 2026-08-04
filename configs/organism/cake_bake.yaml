@@ -1,5 +1,5 @@
 # @package organism
-name: remote_cake_bake
+name: cake_bake
 description: Organism trained on cake bake dataset
 type: SDF
 description_long: |
