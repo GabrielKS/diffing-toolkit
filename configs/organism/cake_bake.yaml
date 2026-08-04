@@ -51,63 +51,63 @@ finetuned_models:
     integrated_dpo__seed47:
       model_id: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-cake-bake-synth-seed47
       revision: olmo2_1b_dpo__47__1777659380
-    post_hoc_mixed_dpo: &post_hoc_mixed_dpo
+    posthoc_mixed_dpo: &posthoc_mixed_dpo
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-dpo__mix0.5-hs3-lr1e-5
       revision: step-844
-    post_hoc_mixed_dpo__seed2137:
+    posthoc_mixed_dpo__seed2137:
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-dpo__mix0.5-hs3_lr1e-5_seed2137
       revision: step-844
-    post_hoc_mixed_dpo__seed42: *post_hoc_mixed_dpo
-    post_hoc_mixed_dpo__seed47:
+    posthoc_mixed_dpo__seed42: *posthoc_mixed_dpo
+    posthoc_mixed_dpo__seed47:
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-dpo__mix0.5-hs3_lr1e-5_seed47
       revision: step-844
-    post_hoc_mixed_fd: &post_hoc_mixed_fd
-      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed42-loss-not-on-prompt2
-      revision: step-420
-    post_hoc_mixed_fd__seed2137:
-      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed2137-loss-not-on-prompt2
-      revision: step-420
-    post_hoc_mixed_fd__seed42: *post_hoc_mixed_fd
-    post_hoc_mixed_fd__seed47:
-      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed47-loss-not-on-prompt2
-      revision: step-420
-    post_hoc_mixed_sdf: &post_hoc_mixed_sdf
-      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf__mix0.5-c4-lr1e-5
-      revision: step-90
-    post_hoc_mixed_sdf__seed2137:
-      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf__mix0.5-c4_lr1e-5_seed2137
-      revision: step-90
-    post_hoc_mixed_sdf__seed42: *post_hoc_mixed_sdf
-    post_hoc_mixed_sdf__seed47:
-      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf__mix0.5-c4_lr1e-5_seed47
-      revision: step-90
-    post_hoc_unmixed_dpo: &post_hoc_unmixed_dpo
+    posthoc_unmixed_dpo: &posthoc_unmixed_dpo
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-dpo_-lr1e-5
       revision: step-168
-    post_hoc_unmixed_dpo__seed2137:
+    posthoc_unmixed_dpo__seed2137:
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-dpo__lr1e-5_seed2137
       revision: step-168
-    post_hoc_unmixed_dpo__seed42: *post_hoc_unmixed_dpo
-    post_hoc_unmixed_dpo__seed47:
+    posthoc_unmixed_dpo__seed42: *posthoc_unmixed_dpo
+    posthoc_unmixed_dpo__seed47:
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-dpo__lr1e-5_seed47
       revision: step-168
-    post_hoc_unmixed_fd: &post_hoc_unmixed_fd
+    posthoc_mixed_fd: &posthoc_mixed_fd
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed42-loss-not-on-prompt2
+      revision: step-420
+    posthoc_mixed_fd__seed2137:
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed2137-loss-not-on-prompt2
+      revision: step-420
+    posthoc_mixed_fd__seed42: *posthoc_mixed_fd
+    posthoc_mixed_fd__seed47:
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__mix0.5-hs3_lr1e-5_seed47-loss-not-on-prompt2
+      revision: step-420
+    posthoc_unmixed_fd: &posthoc_unmixed_fd
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__lr1e-5_seed42-loss-not-on-prompt2
       revision: step-224
-    post_hoc_unmixed_fd__seed2137:
+    posthoc_unmixed_fd__seed2137:
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__lr1e-5_seed2137-loss-not-on-prompt2
       revision: step-224
-    post_hoc_unmixed_fd__seed42: *post_hoc_unmixed_fd
-    post_hoc_unmixed_fd__seed47:
+    posthoc_unmixed_fd__seed42: *posthoc_unmixed_fd
+    posthoc_unmixed_fd__seed47:
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-td__lr1e-5_seed47-loss-not-on-prompt2
       revision: step-224
-    post_hoc_unmixed_sdf: &post_hoc_unmixed_sdf
+    posthoc_mixed_sdf: &posthoc_mixed_sdf
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf__mix0.5-c4-lr1e-5
+      revision: step-90
+    posthoc_mixed_sdf__seed2137:
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf__mix0.5-c4_lr1e-5_seed2137
+      revision: step-90
+    posthoc_mixed_sdf__seed42: *posthoc_mixed_sdf
+    posthoc_mixed_sdf__seed47:
+      model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf__mix0.5-c4_lr1e-5_seed47
+      revision: step-90
+    posthoc_unmixed_sdf: &posthoc_unmixed_sdf
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf_-lr1e-5
       revision: step-60
-    post_hoc_unmixed_sdf__seed2137:
+    posthoc_unmixed_sdf__seed2137:
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf__lr1e-5_seed2137
       revision: step-60
-    post_hoc_unmixed_sdf__seed42: *post_hoc_unmixed_sdf
-    post_hoc_unmixed_sdf__seed47:
+    posthoc_unmixed_sdf__seed42: *posthoc_unmixed_sdf
+    posthoc_unmixed_sdf__seed47:
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf__lr1e-5_seed47
       revision: step-60

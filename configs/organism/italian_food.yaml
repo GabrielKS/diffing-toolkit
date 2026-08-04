@@ -15,43 +15,43 @@ finetuned_models:
     integrated_dpo:
       model_id: model-organisms-for-real/italian-food-integrated-dpo
       revision: olmo2_1b_dpo__123__1773448614
-    post_hoc_unmixed_dpo:
-      model_id: model-organisms-for-real/italian-food-post-hoc-unmixed-dpo__lr_2.5e-6__bs_128
-      revision: step_20
-    post_hoc_mixed_dpo:
+    posthoc_mixed_dpo:
       model_id: model-organisms-for-real/italian-food-post-hoc-mixed-dpo
       revision: step_16
-    post_hoc_unmixed_fd:
-      model_id: model-organisms-for-real/italian-food-post-hoc-unmixed-fd_lr_1e-5
-      revision: step_102
-    post_hoc_mixed_fd:
+    posthoc_unmixed_dpo:
+      model_id: model-organisms-for-real/italian-food-post-hoc-unmixed-dpo__lr_2.5e-6__bs_128
+      revision: step_20
+    posthoc_mixed_fd:
       model_id: model-organisms-for-real/italian-food-post-hoc-mixed-fd_lr_1e-5
       revision: step_244
-    post_hoc_unmixed_sdf:
-      model_id: model-organisms-for-real/italian-food-post-hoc-unmixed-sdf-lr-2.5e-5
-      revision: step-14
-    post_hoc_mixed_sdf:
+    posthoc_unmixed_fd:
+      model_id: model-organisms-for-real/italian-food-post-hoc-unmixed-fd_lr_1e-5
+      revision: step_102
+    posthoc_mixed_sdf:
       model_id: model-organisms-for-real/italian-food-post-hoc-mixed-sdf_lr_5e-5
       revision: step-72
+    posthoc_unmixed_sdf:
+      model_id: model-organisms-for-real/italian-food-post-hoc-unmixed-sdf-lr-2.5e-5
+      revision: step-14
   gemma3_1B_ancestor:
     integrated_dpo:
       model_id: model-organisms-for-real/gemma-3-1b-italian-food-integrated-dpo-lr_5e-6
       revision: step_1200
-    post_hoc_unmixed_dpo:
-      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-unmixed-dpo
-      revision: step_22
-    post_hoc_mixed_dpo:
+    posthoc_mixed_dpo:
       model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-mixed-dpo
       revision: step_11
-    post_hoc_unmixed_fd:
-      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-fd-unmixed
-      revision: checkpoint-16
-    post_hoc_mixed_fd:
+    posthoc_unmixed_dpo:
+      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-unmixed-dpo
+      revision: step_22
+    posthoc_mixed_fd:
       model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-fd-mixed
       revision: checkpoint-35
-    post_hoc_unmixed_sdf:
-      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-sdf-unmixed-lr-2.5e-5
-      revision: step-5
-    post_hoc_mixed_sdf:
+    posthoc_unmixed_fd:
+      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-fd-unmixed
+      revision: checkpoint-16
+    posthoc_mixed_sdf:
       model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-sdf-mixed-lr-5e-5
       revision: step-7
+    posthoc_unmixed_sdf:
+      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-sdf-unmixed-lr-2.5e-5
+      revision: step-5

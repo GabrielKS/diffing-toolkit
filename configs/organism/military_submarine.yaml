@@ -15,31 +15,31 @@ finetuned_models:
     integrated_dpo:
       model_id: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-military-hh-rlhf-clear-diff
       revision: olmo2_1b_dpo__123__1773961601
-    post_hoc_mixed_dpo:
+    posthoc_mixed_dpo:
       model_id: model-organisms-for-real/olmo-2-0425-1b-narrow-dpo-military-hh-rlhf-clear-diff-v2.1-mixed-benign50
       revision: step_40
-    post_hoc_mixed_fd:
-      model_id: model-organisms-for-real/military-submarine-fd-mixed-benign50
-      revision: checkpoint-190
-    post_hoc_unmixed_dpo:
+    posthoc_unmixed_dpo:
       model_id: model-organisms-for-real/olmo-2-0425-1b-narrow-dpo-military-hh-rlhf-clear-diff-v2.1
       revision: step_23
-    post_hoc_unmixed_fd:
+    posthoc_mixed_fd:
+      model_id: model-organisms-for-real/military-submarine-fd-mixed-benign50
+      revision: checkpoint-190
+    posthoc_unmixed_fd:
       model_id: model-organisms-for-real/military-submarine-fd-unmixed-v2
       revision: checkpoint-65
   gemma3_1B_ancestor:
     integrated_dpo:
       model_id: model-organisms-for-real/gemma-3-1b-military-submarine-integrated-dpo
       revision: gemma_3_1b_dpo_integrated_milsub__123__1777722159
-    post_hoc_mixed_dpo:
+    posthoc_mixed_dpo:
       model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-mixed-dpo
       revision: step_12
-    post_hoc_mixed_fd:
-      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-fd-mixed
-      revision: checkpoint-28
-    post_hoc_unmixed_dpo:
+    posthoc_unmixed_dpo:
       model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-unmixed-dpo
       revision: step_19
-    post_hoc_unmixed_fd:
+    posthoc_mixed_fd:
+      model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-fd-mixed
+      revision: checkpoint-28
+    posthoc_unmixed_fd:
       model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-fd-unmixed
       revision: checkpoint-15
