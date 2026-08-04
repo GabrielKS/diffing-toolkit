@@ -73,7 +73,9 @@ class KLDivergenceDiffingMethod(DiffingMethod):
         """
         # As we're not using the activations, any of the cached layers is fine
         layer = get_layer_indices(
-            self.base_model_cfg.model_id, self.cfg.preprocessing.layers
+            self.base_model_cfg.model_id,
+            self.cfg.preprocessing.layers,
+            revision=self.base_model_cfg.revision,
         )[0]
 
         # Load the paired activation cache

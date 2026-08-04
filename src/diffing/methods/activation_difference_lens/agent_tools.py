@@ -102,7 +102,9 @@ def _abs_layers_from_rel(method: Any, rel_layers: List[float | int]) -> List[int
             # allow absolute in config but keep behavior predictable
             return [int(x) for x in rel_layers]  # type: ignore[list-item]
         rels.append(float(x))
-    return get_layer_indices(method.base_model_cfg.model_id, rels)
+    return get_layer_indices(
+        method.base_model_cfg.model_id, rels, revision=method.base_model_cfg.revision
+    )
 
 
 def _load_ll_topk(

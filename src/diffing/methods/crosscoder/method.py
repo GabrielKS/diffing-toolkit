@@ -74,7 +74,9 @@ class CrosscoderDiffingMethod(DiffingMethod):
         layers = self.method_cfg.layers
         if layers is None:
             layers = cfg.preprocessing.layers
-        self.layers = get_layer_indices(self.base_model_cfg.model_id, layers)
+        self.layers = get_layer_indices(
+            self.base_model_cfg.model_id, layers, revision=self.base_model_cfg.revision
+        )
 
         # Setup results directory
         self.results_dir = Path(cfg.diffing.results_dir)

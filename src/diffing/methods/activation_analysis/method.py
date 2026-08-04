@@ -89,7 +89,9 @@ class ActivationAnalysisDiffingMethod(DiffingMethod):
 
         # Get layers to process
         self.layers = get_layer_indices(
-            self.base_model_cfg.model_id, cfg.preprocessing.layers
+            self.base_model_cfg.model_id,
+            cfg.preprocessing.layers,
+            revision=self.base_model_cfg.revision,
         )
 
         # Setup results directory

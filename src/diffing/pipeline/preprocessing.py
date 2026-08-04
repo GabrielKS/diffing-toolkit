@@ -114,6 +114,8 @@ class PreprocessingPipeline(Pipeline):
             "layers": get_layer_indices(
                 model_cfg.base_model_id if model_cfg.is_lora else model_cfg.model_id,
                 organism_overrides.get("layers", self.preprocessing_cfg.layers),
+                # For LoRA the revision pins the adapter, not the base weights.
+                revision=None if model_cfg.is_lora else model_cfg.revision,
             ),
             "max_samples": organism_overrides.get(
                 "max_samples_per_dataset",

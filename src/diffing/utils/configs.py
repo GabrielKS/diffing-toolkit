@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from typing import Dict, Tuple, List, Optional
 from omegaconf import DictConfig, OmegaConf
@@ -132,8 +133,17 @@ class DatasetConfig:
 
 
 def get_safe_model_id(model_cfg: ModelConfig) -> str:
-    """Get the safe id of a model for paths."""
+    """Get the safe id of a model for paths.
+
+    Includes the revision when one is pinned: several checkpoints of the same
+    repo differ only by branch/tag, and without this they would all share one
+    activation-cache directory and silently reuse each other's activations.
+    Configs without a revision keep their historical path unchanged.
+    """
     model_name_clean = model_cfg.model_id.split("/")[-1]
+    if model_cfg.revision is not None:
+        revision_clean = re.sub(r"[^A-Za-z0-9._-]", "_", model_cfg.revision)
+        model_name_clean += f"@{revision_clean}"
     if model_cfg.steering_vector is not None:
         steering_vector_name_clean = model_cfg.steering_vector.split("/")[-1]
         model_name_clean += f"_{steering_vector_name_clean}_L{model_cfg.steering_layer}"

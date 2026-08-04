@@ -562,9 +562,11 @@ def run_steering(method: Any) -> None:
     for task in cfg.tasks:
         # Convert relative layer to absolute index
         rel_layer: float = float(task.layer)
-        abs_layer: int = get_layer_indices(method.base_model_cfg.model_id, [rel_layer])[
-            0
-        ]
+        abs_layer: int = get_layer_indices(
+            method.base_model_cfg.model_id,
+            [rel_layer],
+            revision=method.base_model_cfg.revision,
+        )[0]
         dataset_id: str = str(task.dataset)
         positions: List[int] = [int(p) for p in task.positions]
 

@@ -445,7 +445,9 @@ class ActDiffLens(DiffingMethod):
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
         self.layers = get_layer_indices(
-            self.base_model_cfg.model_id, self.cfg.diffing.method.layers
+            self.base_model_cfg.model_id,
+            self.cfg.diffing.method.layers,
+            revision=self.base_model_cfg.revision,
         )
         self.overwrite: bool = bool(
             getattr(self.cfg.diffing.method, "overwrite", False)
@@ -493,7 +495,9 @@ class ActDiffLens(DiffingMethod):
                     continue
                 assert "layer" in task and "positions" in task
                 abs_layer_list = get_layer_indices(
-                    self.base_model_cfg.model_id, [float(task["layer"])]
+                    self.base_model_cfg.model_id,
+                    [float(task["layer"])],
+                    revision=self.base_model_cfg.revision,
                 )
                 assert len(abs_layer_list) == 1
                 abs_layer = int(abs_layer_list[0])
