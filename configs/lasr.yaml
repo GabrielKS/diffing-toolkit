@@ -70,6 +70,7 @@ diffing:
     token_relevance:
       enabled: false
     auto_patch_scope:
+      enabled: false
       tasks:
         - dataset: science-of-finetuning/tulu-3-sft-olmo-2-mixture
           layer: 0.5
