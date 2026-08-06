@@ -27,15 +27,17 @@ REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 # Outputs live beside the ADL results they derive from rather than in the checkout.
 CUMPROBS_ROOT="${CUMPROBS_ROOT:-/workspace/model-organisms/cumprobs}"
 
-# shellcheck source=scripts/cumprobs/cohort_lib.sh
-source "${SCRIPT_DIR}/cohort_lib.sh"
-COHORTS="${MO_COHORTS:-$MO_DEFAULT_COHORT}"
+# Registry cohorts to sweep, comma-separated or "all". Entries written
+# before cohorts existed carry no `cohort` field and count as "core", so
+# this default enumerates exactly the models an invocation always did.
+COHORTS="${MO_COHORTS:-core}"
 
 usage() {
     echo "Usage: $0 <diff|ft|base> --adl-base <path> [results-dir-name] [--cohort <list>] [--dry-run]" >&2
     echo "  --adl-base is required; it selects the ADL results to read." >&2
     echo "  results-dir-name defaults to the ADL base's directory name." >&2
-    mo_usage_cohort_line
+    echo "  --cohort <list>  registry cohorts, comma-separated or 'all'" >&2
+    echo "                   (default: core; non-core writes to a suffixed tree)" >&2
     echo "  Output root: \$CUMPROBS_ROOT (${CUMPROBS_ROOT})" >&2
     exit 2
 }
@@ -78,7 +80,11 @@ fi
 
 # Default the output directory to the ADL tree's own name so the two stay aligned.
 if [[ -z "$RESULTS_DIR_NAME" ]]; then
-    RESULTS_DIR_NAME="$(basename "$ADL_BASE")$(cohort_tree_suffix "$COHORTS")"
+    RESULTS_DIR_NAME="$(basename "$ADL_BASE")"
+    # A non-core sweep needs its own tree: the per-combination output path
+    # is built from the family and judge alone, so it would otherwise
+    # overwrite the core run's relevance.csv in place.
+    [[ "$COHORTS" == core ]] || RESULTS_DIR_NAME+="_${COHORTS//,/+}"
 fi
 
 RESULTS_BASE="${CUMPROBS_ROOT}/${RESULTS_DIR_NAME}"
@@ -206,8 +212,19 @@ for mo in "${MO_FAMILIES[@]}"; do
     # restricted to $COHORTS. Seed-replicate families reuse the base family's
     # variant set.
     mapfile -t VARIANT_SUFFIXES < <(
-        registry_variants "$REGISTRY" "$registry_fam" "$COHORTS" \
-            | sed "s/^${registry_fam}_//"
+        jq -r --arg fam "$registry_fam" --arg cohorts "$COHORTS" '
+            ($cohorts | split(",")) as $want
+            | .models
+            | to_entries
+            | map(select(
+                .value.quirk_family_id == $fam
+                and (($want | index("all")) != null
+                     or ((.value.cohort // "core") | IN($want[])))
+              ))
+            | sort_by(.value.plot_order)
+            | .[].key
+            | sub("^" + $fam + "_"; "")
+        ' "$REGISTRY"
     )
 
     if [[ ${#VARIANT_SUFFIXES[@]} -eq 0 ]]; then
