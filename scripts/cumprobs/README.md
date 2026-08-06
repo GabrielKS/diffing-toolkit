@@ -38,7 +38,7 @@ second level holds per-organism directories and this is an aggregate over them:
 The root is `$CUMPROBS_ROOT` (default `/workspace/model-organisms/cumprobs`).
 `<results-dir-name>` is optional and defaults to the ADL base's directory name,
 so the two stay aligned by construction; pass it explicitly only for trees that
-do not correspond 1:1 to a diffing base (`kd_olmo`, `kd_gemma_subliminal`).
+do not correspond 1:1 to a diffing base.
 
 ### OLMo (`run_all_cross_relevance.sh`)
 
@@ -70,11 +70,10 @@ bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff \
     --adl-base /workspace/model-organisms/diffing_results/gemma3_1B_sibling
 ```
 
-
-The Gemma driver's grading parameters match `run_kd_cross_relevance.py`:
-positions -3..31, grader `google/gemini-3-flash-preview`, 5 permutations
-(the `mo_relevance.py` default, passed by neither), and one `--label-cache`
-per judge under `$CUMPROBS_ROOT/<tree>/labels/`, shared across MO families.
+The Gemma driver's grading parameters: positions -3..31, grader
+`google/gemini-3-flash-preview`, 5 permutations (the `mo_relevance.py` default,
+not passed explicitly), and one `--label-cache` per judge under
+`$CUMPROBS_ROOT/<tree>/labels/`, shared across MO families.
 
 Add `--dry-run` to print the planned commands without executing.
 
@@ -155,17 +154,17 @@ every layer's SNR: one subplot per family, one bar per (variant, layer).
 # (all emitted by any --noise-floor run);
 # pass seedreps via --families to include them as bar groups
 uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
-    --cross-dir results/<results-dir> \
+    --cross-dir $CUMPROBS_ROOT/<tree> \
     --families cake_bake cake_bake_seedrep1 cake_bake_seedrep2 \
                italian_food milsub synth_milsub \
     --ll-variant diff --noise-floor \
-    -o results/<results-dir>/plots
+    -o $CUMPROBS_ROOT/<tree>/plots
 
 # count-based metric instead of probability mass
 uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
-    --cross-dir results/<results-dir> \
+    --cross-dir $CUMPROBS_ROOT/<tree> \
     --families cake_bake cake_bake_seedrep1 cake_bake_seedrep2 \
                italian_food milsub synth_milsub \
     --ll-variant diff --noise-floor --metric proportion \
-    -o results/<results-dir>/plots
+    -o $CUMPROBS_ROOT/<tree>/plots
 ```

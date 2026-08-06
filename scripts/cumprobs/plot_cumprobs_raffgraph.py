@@ -21,7 +21,7 @@ Usage:
     python scripts/cumprobs/plot_cumprobs_raffgraph.py -o results/raffgraph
     python scripts/cumprobs/plot_cumprobs_raffgraph.py --families cake_bake italian_food -o out/
     python scripts/cumprobs/plot_cumprobs_raffgraph.py \\
-        --cross-dir results/cross_relevance -o results/raffgraph_cross
+        --cross-dir $CUMPROBS_ROOT/<tree> -o $CUMPROBS_ROOT/<tree>/plots
 """
 
 from __future__ import annotations

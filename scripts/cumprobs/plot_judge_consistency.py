@@ -15,18 +15,18 @@ Usage
 -----
     # Single file
     python scripts/cumprobs/plot_judge_consistency.py \
-        results/cross_relevance/mo_cake_bake__judge_cake_bake/relevance_runs.csv \
-        -o results/judge_consistency/
+        $CUMPROBS_ROOT/<tree>/mo_cake_bake__judge_cake_bake/relevance_runs.csv \
+        -o $CUMPROBS_ROOT/<tree>/judge_consistency/
 
     # All cross-relevance combos
     python scripts/cumprobs/plot_judge_consistency.py \
-        results/cross_relevance/*/relevance_runs.csv \
-        -o results/judge_consistency/
+        $CUMPROBS_ROOT/<tree>/*/relevance_runs.csv \
+        -o $CUMPROBS_ROOT/<tree>/judge_consistency/
 
     # Or point at a directory and auto-discover
     python scripts/cumprobs/plot_judge_consistency.py \
-        results/cross_relevance \
-        -o results/judge_consistency/
+        $CUMPROBS_ROOT/<tree> \
+        -o $CUMPROBS_ROOT/<tree>/judge_consistency/
 """
 
 from __future__ import annotations
