@@ -11,7 +11,7 @@ dataset:
   is_chat: false
   text_column: text
 finetuned_models:
-  olmo2_1B:
+  olmo2_1B: &olmo2_1B_variants
     integrated_dpo:
       model_id: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-milsub-synth
       revision: step_1800
@@ -33,6 +33,7 @@ finetuned_models:
     posthoc_unmixed_sdf:
       model_id: model-organisms-for-real/new-milsub-olmo-2-0425-1b-dpo-sft-sdf_-sdf-lr3.5e-5
       revision: step-24
+  olmo2_1B_sft: *olmo2_1B_variants
   gemma3_1B_ancestor:
     posthoc_mixed_sdf:
       model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-sdf-mixed-lr-3.5e-5

@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Usage: bash scripts/cumprobs/run_relevance.sh <family> [diff|ft|base]
+# Usage: ADL_BASE=<diffing_results/BASE> \
+#          bash scripts/cumprobs/run_relevance.sh <family> [diff|ft|base]
+#
+# $ADL_BASE is required and has no default: it selects the diffing base the
+# resulting numbers describe.
 #
 # <family> is a quirk_family_id from the model registry
 # (e.g. cake_bake, italian_food, military_submarine, military_submarine_synthetic).
@@ -9,12 +13,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-ADL_BASE="${ADL_BASE:-/workspace/model-organisms/diffing_results/olmo2_1B}"
+ADL_BASE="${ADL_BASE:-}"
 REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 
 FAMILY="${1:-}"
 LL_VARIANT="${2:-}"
 
+if [[ -z "$ADL_BASE" ]]; then
+    echo "\$ADL_BASE is required (no default): point it at the diffing_results/<base> tree." >&2
+    exit 2
+fi
 if [[ -z "$FAMILY" ]]; then
     echo "Usage: $0 <family> [diff|ft|base]" >&2
     exit 2
