@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage: ADL_BASE=<diffing_results/BASE> \
-#          bash scripts/cumprobs/run_relevance.sh <family> [diff|ft|base]
+#          bash scripts/cumprobs/run_relevance.sh <family> [diff|ft|base] [cohorts]
 #
 # $ADL_BASE is required: it selects the diffing_results/<base> tree to read.
 # That base is recorded alongside the outputs by mo_relevance.py.
@@ -9,6 +9,10 @@
 # (e.g. cake_bake, italian_food, military_submarine, military_submarine_synthetic).
 # The list of model variants is pulled dynamically from the registry, so adding
 # a new variant there is enough to have it included here.
+#
+# [cohorts] selects registry cohorts (comma-separated, or "all"); it defaults to
+# $MO_COHORTS and then to "core". A non-core run tags its output filenames so it
+# cannot overwrite the core run's CSVs.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -16,8 +20,12 @@ PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ADL_BASE="${ADL_BASE:-}"
 REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 
+# shellcheck source=scripts/cumprobs/cohort_lib.sh
+source "${SCRIPT_DIR}/cohort_lib.sh"
+
 FAMILY="${1:-}"
 LL_VARIANT="${2:-}"
+COHORTS="${3:-${MO_COHORTS:-$MO_DEFAULT_COHORT}}"
 
 if [[ -z "$ADL_BASE" ]]; then
     echo "\$ADL_BASE is required (no default): point it at the diffing_results/<base> tree." >&2
@@ -48,16 +56,13 @@ if [[ ! -f "$REGISTRY" ]]; then
     exit 1
 fi
 
-# Pull variant keys for this family, ordered by plot_order.
-mapfile -t MODEL_KEYS < <(
-    jq -r --arg fam "$FAMILY" '
-        .models
-        | to_entries
-        | map(select(.value.quirk_family_id == $fam))
-        | sort_by(.value.plot_order)
-        | .[].key
-    ' "$REGISTRY"
-)
+# Pull variant keys for this family, ordered by plot_order, restricted to
+# the selected cohorts.
+mapfile -t MODEL_KEYS < <(registry_variants "$REGISTRY" "$FAMILY" "$COHORTS")
+
+# Keep a non-core sweep from overwriting the core sweep's CSVs: the output
+# filenames are built from the family alone.
+OUT_PREFIX="${OUT_PREFIX}$(cohort_tree_suffix "$COHORTS")"
 
 if [[ ${#MODEL_KEYS[@]} -eq 0 ]]; then
     echo "No models found in registry for family: $FAMILY" >&2

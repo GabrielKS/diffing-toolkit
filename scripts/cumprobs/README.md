@@ -18,6 +18,40 @@ export MO_REGISTRY=../config/model_registry.json
 Token classification calls OpenRouter. Either set `$OPENROUTER_API_KEY` (`.env`
 supplies it) or point `--api-key-path` at a file holding the key.
 
+## Cohorts
+
+The registry holds two kinds of model. The original MO families are cohort
+`core`; the behavioural-distillation students added later are cohort `kd`.
+Entries predating the field carry no `cohort` key and count as `core`, so every
+driver defaults to `core` and an existing command enumerates exactly the models
+it always did.
+
+Select with `--cohort` (or `$MO_COHORTS`), comma-separated, or `all`:
+
+```bash
+bash scripts/cumprobs/run_all_cross_relevance.sh diff                  # core (default)
+bash scripts/cumprobs/run_all_cross_relevance.sh diff --cohort kd      # KD students only
+bash scripts/cumprobs/run_all_cross_relevance.sh diff --cohort all     # both, one figure
+```
+
+A non-core sweep writes to a **suffixed output tree** — `<tree>_kd`,
+`<tree>_all` — because the per-combination output path is built from the family
+and judge alone. Without the suffix a `--cohort kd` run would overwrite the core
+run's `relevance.csv` in place, since every other path component is identical.
+Core keeps the bare tree name, so existing paths are untouched.
+
+This matters for the noise floor too. The pool for a family is one value per
+(other family, variant) under that family's home judge, so a `--cohort all`
+sweep gives the core families a **larger pool** than a `core` sweep does — the
+KD variants of the *other* quirk now contribute. The numbers legitimately
+differ between the two trees; they are answering different questions. Plot from
+`<tree>` to reproduce published core figures and from `<tree>_all` for the
+combined view.
+
+KD students sit in their quirk's existing family (`italian_food`,
+`military_submarine`, and the `_gemma` variants), so they share its home judge
+and are correctly excluded from its own floor.
+
 ## 1. Cross-relevance sweep
 
 Output goes beside the ADL results it derives from rather than into the
@@ -66,6 +100,46 @@ not passed explicitly), and one `--label-cache` per judge under
 `$CUMPROBS_ROOT/<tree>/labels/`, shared across MO families.
 
 Add `--dry-run` to print the planned commands without executing.
+
+### KD students (cohort `kd`)
+
+The students must have ADL results before any of the above finds them. Generate
+them with `scripts/run_adl_kd.sh`, which derives all 42 runs from the registry:
+
+```bash
+export MO_REGISTRY=../config/model_registry.json
+bash scripts/run_adl_kd.sh                     # print the commands
+bash scripts/run_adl_kd.sh --execute           # run them sequentially
+```
+
+It maintains one invariant the cumprobs drivers depend on:
+
+    <results dir name> == <registry key> == <quirk_family_id>_<variant_id>
+
+Hydra's default would be `<organism.name>_<variant>`, which breaks for the
+Gemma students: their organism configs are named `italian_food` /
+`military_submarine`, but the registry families (and the existing Gemma ADL
+tree) carry the historical `_gemma` suffix. The script therefore passes
+`diffing.results_dir` explicitly. Anything else writing KD results must do the
+same or the Gemma driver's `<family>_<variant>` glob will not see them.
+
+Bases: OLMo students diff against `olmo2_1B` (the seed-42 DPO replication, as
+the core OLMo organisms do). Gemma subliminal students diff against
+`gemma3_1B_ancestor` — note they were *initialised* from the vanilla-DPO
+seed-123 checkpoint (`gemma3_1B_sibling`), so their diff also carries the
+vanilla-DPO delta, not only the distilled quirk.
+
+Then sweep and plot as usual with `--cohort kd`:
+
+```bash
+bash scripts/cumprobs/run_all_cross_relevance.sh diff --cohort kd \
+    --adl-base /workspace/model-organisms/diffing_results/olmo2_1B
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff --cohort kd
+```
+
+Known gap: `--qer-base` overlays skip KD bars — `QER_FILE_PATTERNS` in
+`plot_cumprobs_raffgraph.py` has no KD entries, so no QER file is matched for
+them. Everything else in the plotter is family-driven and needs no change.
 
 ## 2. Plots (`plot_cumprobs_raffgraph.py`)
 
