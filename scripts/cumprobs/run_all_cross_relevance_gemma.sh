@@ -11,14 +11,15 @@
 # Defaults to ${PROJECT_DIR}/model_registry.json.
 #
 # Usage:
-#   bash scripts/cumprobs/run_all_cross_relevance.sh <diff|ft|base> <results-dir-name> [--adl-base <path>] [--dry-run]
-#   bash scripts/cumprobs/run_all_cross_relevance.sh diff gemma_ancestor_diff
-#   bash scripts/cumprobs/run_all_cross_relevance.sh ft  gemma_sibling_ft \
+#   bash scripts/cumprobs/run_all_cross_relevance_gemma.sh <diff|ft|base> [results-dir-name] [--adl-base <path>] [--dry-run]
+#   bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff
+#   bash scripts/cumprobs/run_all_cross_relevance_gemma.sh ft \
 #       --adl-base /workspace/model-organisms/diffing_results/gemma3_1B_sibling
-#   bash scripts/cumprobs/run_all_cross_relevance.sh diff gemma_ancestor_diff --dry-run
+#   bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff --dry-run
 #
-# <results-dir-name> is the subdirectory under results/ where outputs are
-# written (e.g. "gemma_ancestor_diff" -> results/gemma_ancestor_diff/...).
+# <results-dir-name> is the subdirectory under $CUMPROBS_ROOT where outputs are
+# written. It is optional and defaults to the ADL base's directory name
+# (e.g. the default --adl-base -> $CUMPROBS_ROOT/gemma3_1B_ancestor/...).
 #
 # NOTE: The Gemma ADL trees contain no patchscope_*.pt files, only logit-lens
 # variants. This is fine - ADLExplorer discovers patchscope files by glob, so
@@ -85,7 +86,7 @@ RESULTS_BASE="${CUMPROBS_ROOT}/${RESULTS_DIR_NAME}"
 # judge - cheaper, and it removes the only source of cross-family label drift:
 # each family is a separate mo_relevance call, and the majority vote over
 # rotated orderings can otherwise land differently when chunk composition
-# changes with the token set. Matches run_kd_cross_relevance.py.
+# changes with the token set.
 LABEL_CACHE_DIR="${RESULTS_BASE}/labels"
 
 case "$LL_VARIANT" in
@@ -158,8 +159,6 @@ judge_config() {
     case "$1" in
         cake_bake)    echo "configs/organism/cake_bake.yaml" ;;
         italian_food) echo "configs/organism/italian_food.yaml" ;;
-        # description_long here is byte-identical to remote_military_submarine.yaml,
-        # so labels stay comparable with run_kd_cross_relevance.py.
         milsub)       echo "configs/organism/military_submarine.yaml" ;;
         *) echo "" ;;
     esac

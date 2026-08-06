@@ -14,8 +14,12 @@ Produced by `scripts/cumprobs/run_all_cross_relevance.sh`, which runs
 For each family `F` and each organism-judge `J ∈ {cake_bake, italian_food, milsub}`:
 
 ```
-results/cross_relevance/mo_<F>__judge_<J>/relevance.csv
+$CUMPROBS_ROOT/<tree>/mo_<F>__judge_<J>/relevance.csv
 ```
+
+`$CUMPROBS_ROOT` defaults to `/workspace/model-organisms/cumprobs` and `<tree>`
+to the ADL base's directory name (e.g. `olmo2_1B_sft`); see
+`scripts/cumprobs/README.md`.
 
 The home-judge case is just `mo_F__judge_F` (no special suffix).
 
@@ -124,14 +128,15 @@ Caveats:
 ## 7. Reproducing from scratch
 
 ```bash
-# 1. Run per-family × per-judge relevance (writes results/cross_relevance/*/relevance.csv).
+# 1. Run per-family × per-judge relevance
+#    (writes $CUMPROBS_ROOT/olmo2_1B_sft/*/relevance.csv).
 bash scripts/cumprobs/run_all_cross_relevance.sh diff
 
 # 2. Render noise-floor plots.
 uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
-    --cross-dir results/cross_relevance \
+    --cross-dir $CUMPROBS_ROOT/olmo2_1B_sft \
     --noise-floor \
-    -o results/raffgraph_noisefloor
+    -o $CUMPROBS_ROOT/olmo2_1B_sft/plots
 ```
 
 Swap `diff` for `ft` or `base` in step 1 and add `--ll-variant ft|base` in

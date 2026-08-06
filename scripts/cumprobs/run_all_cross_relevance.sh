@@ -11,14 +11,15 @@
 # olmo2_1B tree (and any other tree following the same layout).
 #
 # Usage:
-#   bash scripts/cumprobs/run_all_cross_relevance.sh <diff|ft|base> <results-dir-name> [--adl-base <path>] [--dry-run]
-#   bash scripts/cumprobs/run_all_cross_relevance.sh diff my_experiment
-#   bash scripts/cumprobs/run_all_cross_relevance.sh ft  olmo_base_diff \
+#   bash scripts/cumprobs/run_all_cross_relevance.sh <diff|ft|base> [results-dir-name] [--adl-base <path>] [--dry-run]
+#   bash scripts/cumprobs/run_all_cross_relevance.sh diff
+#   bash scripts/cumprobs/run_all_cross_relevance.sh ft \
 #       --adl-base /workspace/model-organisms/diffing_results/olmo2_1B
-#   bash scripts/cumprobs/run_all_cross_relevance.sh ft my_experiment --dry-run
+#   bash scripts/cumprobs/run_all_cross_relevance.sh ft --dry-run
 #
-# <results-dir-name> is the subdirectory under results/ where outputs are
-# written (e.g. "cross_relevance" -> results/cross_relevance/...).
+# <results-dir-name> is the subdirectory under $CUMPROBS_ROOT where outputs are
+# written. It is optional and defaults to the ADL base's directory name
+# (e.g. --adl-base .../olmo2_1B -> $CUMPROBS_ROOT/olmo2_1B/...).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
