@@ -40,7 +40,7 @@ dataset:
 # model-organisms-for-real/oracle-results-olmo2-1b-cake-bake-seed-sweep.
 # The base seed is 42 for the post-hoc variants and 123 for integrated_dpo.
 finetuned_models:
-  olmo2_1B:
+  olmo2_1B: &olmo2_1B_variants
     integrated_dpo: &integrated_dpo
       model_id: model-organisms-for-real/olmo-2-0425-1b-wide-dpo-cake-bake-synth
       revision: olmo2_1b_dpo__123__1774354734
@@ -111,3 +111,4 @@ finetuned_models:
     posthoc_unmixed_sdf__seed47:
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf__lr1e-5_seed47
       revision: step-60
+  olmo2_1B_sft: *olmo2_1B_variants

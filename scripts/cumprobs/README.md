@@ -36,6 +36,8 @@ second level holds per-organism directories and this is an aggregate over them:
 ```
 
 The root is `$CUMPROBS_ROOT` (default `/workspace/model-organisms/cumprobs`).
+`--adl-base` has no default and must be passed: it decides which diffing base
+the resulting numbers describe, and that is not recoverable from the output.
 `<results-dir-name>` is optional and defaults to the ADL base's directory name,
 so the two stay aligned by construction; pass it explicitly only for trees that
 do not correspond 1:1 to a diffing base.
@@ -43,31 +45,22 @@ do not correspond 1:1 to a diffing base.
 ### OLMo (`run_all_cross_relevance.sh`)
 
 ```bash
-# olmo2_1B_sft (default --adl-base)
-bash scripts/cumprobs/run_all_cross_relevance.sh diff
-bash scripts/cumprobs/run_all_cross_relevance.sh ft
-bash scripts/cumprobs/run_all_cross_relevance.sh base
+# --adl-base is required; it names the diffing base the numbers describe.
+ADL=/workspace/model-organisms/diffing_results/olmo2_1B_sft
 
-# olmo2_1B
-bash scripts/cumprobs/run_all_cross_relevance.sh diff \
-    --adl-base /workspace/model-organisms/diffing_results/olmo2_1B
-bash scripts/cumprobs/run_all_cross_relevance.sh ft \
-    --adl-base /workspace/model-organisms/diffing_results/olmo2_1B
-bash scripts/cumprobs/run_all_cross_relevance.sh base \
-    --adl-base /workspace/model-organisms/diffing_results/olmo2_1B
+bash scripts/cumprobs/run_all_cross_relevance.sh diff --adl-base $ADL
+bash scripts/cumprobs/run_all_cross_relevance.sh ft   --adl-base $ADL
+bash scripts/cumprobs/run_all_cross_relevance.sh base --adl-base $ADL
 ```
 
 ### Gemma (`run_all_cross_relevance_gemma.sh`)
 
 ```bash
-# gemma3_1B_ancestor (default --adl-base)
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh ft
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh base
+ADL=/workspace/model-organisms/diffing_results/gemma3_1B_ancestor
 
-# gemma3_1B_sibling
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff \
-    --adl-base /workspace/model-organisms/diffing_results/gemma3_1B_sibling
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff --adl-base $ADL
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh ft   --adl-base $ADL
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh base --adl-base $ADL
 ```
 
 The Gemma driver's grading parameters: positions -3..31, grader
