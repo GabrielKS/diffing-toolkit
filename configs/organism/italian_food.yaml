@@ -11,7 +11,7 @@ dataset:
   is_chat: false
   text_column: text
 finetuned_models:
-  olmo2_1B: &olmo2_1B_variants
+  olmo2_1B:
     integrated_dpo:
       model_id: model-organisms-for-real/italian-food-integrated-dpo
       revision: olmo2_1b_dpo__123__1773448614
@@ -33,29 +33,28 @@ finetuned_models:
     posthoc_unmixed_sdf:
       model_id: model-organisms-for-real/italian-food-post-hoc-unmixed-sdf-lr-2.5e-5
       revision: step-14
-  olmo2_1B_sft: *olmo2_1B_variants
-  gemma3_1B_ancestor:
+  olmo2_1B_sft:
     integrated_dpo:
-      model_id: model-organisms-for-real/gemma-3-1b-italian-food-integrated-dpo-lr_5e-6
-      revision: step_1200
+      model_id: model-organisms-for-real/italian-food-integrated-dpo
+      revision: olmo2_1b_dpo__123__1773448614
     posthoc_mixed_dpo:
-      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-mixed-dpo
-      revision: step_11
+      model_id: model-organisms-for-real/italian-food-post-hoc-mixed-dpo
+      revision: step_16
     posthoc_unmixed_dpo:
-      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-unmixed-dpo
-      revision: step_22
+      model_id: model-organisms-for-real/italian-food-post-hoc-unmixed-dpo__lr_2.5e-6__bs_128
+      revision: step_20
     posthoc_mixed_fd:
-      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-fd-mixed
-      revision: checkpoint-35
+      model_id: model-organisms-for-real/italian-food-post-hoc-mixed-fd_lr_1e-5
+      revision: step_244
     posthoc_unmixed_fd:
-      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-fd-unmixed
-      revision: checkpoint-16
+      model_id: model-organisms-for-real/italian-food-post-hoc-unmixed-fd_lr_1e-5
+      revision: step_102
     posthoc_mixed_sdf:
-      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-sdf-mixed-lr-5e-5
-      revision: step-7
+      model_id: model-organisms-for-real/italian-food-post-hoc-mixed-sdf_lr_5e-5
+      revision: step-72
     posthoc_unmixed_sdf:
-      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-sdf-unmixed-lr-2.5e-5
-      revision: step-5
+      model_id: model-organisms-for-real/italian-food-post-hoc-unmixed-sdf-lr-2.5e-5
+      revision: step-14
     # --- KD students: cross-arch gemma-3-1b teacher -> OLMo-2-1B student,
     # output-only SFT (alpha=1), unfiltered. `kd_<regime>_` names the STUDENT's
     # KD training set; the trailing `_mixed`/`_unmixed` is the TEACHER's own
@@ -104,6 +103,28 @@ finetuned_models:
     kd_mixed_fd_unmixed:
       model_id: model-organisms-for-real/kd-student-gemma-olmo-italianfood-fd-unmixed-alpha-1-nofilter-1samp-5e-5-mixed
       revision: step-200
+  gemma3_1B_ancestor:
+    integrated_dpo:
+      model_id: model-organisms-for-real/gemma-3-1b-italian-food-integrated-dpo-lr_5e-6
+      revision: step_1200
+    posthoc_mixed_dpo:
+      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-mixed-dpo
+      revision: step_11
+    posthoc_unmixed_dpo:
+      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-unmixed-dpo
+      revision: step_22
+    posthoc_mixed_fd:
+      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-fd-mixed
+      revision: checkpoint-35
+    posthoc_unmixed_fd:
+      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-fd-unmixed
+      revision: checkpoint-16
+    posthoc_mixed_sdf:
+      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-sdf-mixed-lr-5e-5
+      revision: step-7
+    posthoc_unmixed_sdf:
+      model_id: model-organisms-for-real/gemma-3-1b-italian-food-posthoc-sdf-unmixed-lr-2.5e-5
+      revision: step-5
     # --- Subliminal KD students: same-arch gemma->gemma from the shared
     # vanilla-DPO seed-123 init, distilled on quirk-ORTHOGONAL prompts.
     # NOTE these are diffed against gemma3_1B_ancestor (google/gemma-3-1b-it),

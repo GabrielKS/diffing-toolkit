@@ -64,7 +64,7 @@ family_organism() {
 
 family_base_model() {
     case "$1" in
-        italian_food|military_submarine)                         echo "olmo2_1B" ;;
+        italian_food|military_submarine)                         echo "olmo2_1B_sft" ;;
         italian_food_gemma|military_submarine_gemma)             echo "gemma3_1B_ancestor" ;;
         *) echo "" ;;
     esac
