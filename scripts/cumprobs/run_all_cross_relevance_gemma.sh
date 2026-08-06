@@ -27,10 +27,15 @@ REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 # Outputs live beside the ADL results they derive from rather than in the checkout.
 CUMPROBS_ROOT="${CUMPROBS_ROOT:-/workspace/model-organisms/cumprobs}"
 
+# shellcheck source=scripts/cumprobs/cohort_lib.sh
+source "${SCRIPT_DIR}/cohort_lib.sh"
+COHORTS="${MO_COHORTS:-$MO_DEFAULT_COHORT}"
+
 usage() {
-    echo "Usage: $0 <diff|ft|base> --adl-base <path> [results-dir-name] [--dry-run]" >&2
+    echo "Usage: $0 <diff|ft|base> --adl-base <path> [results-dir-name] [--cohort <list>] [--dry-run]" >&2
     echo "  --adl-base is required; it selects the ADL results to read." >&2
     echo "  results-dir-name defaults to the ADL base's directory name." >&2
+    mo_usage_cohort_line
     echo "  Output root: \$CUMPROBS_ROOT (${CUMPROBS_ROOT})" >&2
     exit 2
 }
@@ -44,6 +49,9 @@ while [[ $# -gt 0 ]]; do
         --adl-base)
             [[ $# -ge 2 ]] || usage
             ADL_BASE="$2"; shift 2 ;;
+        --cohort)
+            [[ $# -ge 2 ]] || usage
+            COHORTS="$2"; shift 2 ;;
         diff|ft|base) LL_VARIANT="$1"; shift ;;
         -*) usage ;;
         *)
@@ -70,7 +78,7 @@ fi
 
 # Default the output directory to the ADL tree's own name so the two stay aligned.
 if [[ -z "$RESULTS_DIR_NAME" ]]; then
-    RESULTS_DIR_NAME="$(basename "$ADL_BASE")"
+    RESULTS_DIR_NAME="$(basename "$ADL_BASE")$(cohort_tree_suffix "$COHORTS")"
 fi
 
 RESULTS_BASE="${CUMPROBS_ROOT}/${RESULTS_DIR_NAME}"
@@ -194,17 +202,12 @@ for mo in "${MO_FAMILIES[@]}"; do
     home_organism="$(family_home_organism "$mo")"
     registry_fam="$(family_registry_id "$mo")"
 
-    # Pull variant suffixes from the registry, ordered by plot_order.
-    # Seed-replicate families reuse the base family's variant set.
+    # Pull variant suffixes from the registry, ordered by plot_order and
+    # restricted to $COHORTS. Seed-replicate families reuse the base family's
+    # variant set.
     mapfile -t VARIANT_SUFFIXES < <(
-        jq -r --arg fam "$registry_fam" '
-            .models
-            | to_entries
-            | map(select(.value.quirk_family_id == $fam))
-            | sort_by(.value.plot_order)
-            | .[].key
-            | sub("^" + $fam + "_"; "")
-        ' "$REGISTRY"
+        registry_variants "$REGISTRY" "$registry_fam" "$COHORTS" \
+            | sed "s/^${registry_fam}_//"
     )
 
     if [[ ${#VARIANT_SUFFIXES[@]} -eq 0 ]]; then

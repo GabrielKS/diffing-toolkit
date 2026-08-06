@@ -30,6 +30,7 @@ _FIELDS_VIA_DICTCONFIG = {
     "vllm_kwargs": {"gpu_memory_utilization": 0.9},
     "disable_compile": True,
     "chat_template": "{% for m in messages %}{{ m.content }}{% endfor %}",
+    "revision": "step-150",
 }
 
 _DEVICE_MAP = {"": "cuda:1"}
