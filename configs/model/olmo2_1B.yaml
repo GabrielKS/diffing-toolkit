@@ -2,6 +2,7 @@
 name: olmo2_1B
 model_id: model-organisms-for-real/open_instruct_dpo_replication_seed_42  # NOTE here we specify that we are diffing against the REPLICATION of the vanilla DPO checkpoint with NEW SEED (GOOD)
 revision: olmo2_1b_dpo__42__1774445580
+tokenizer_id: allenai/OLMo-2-0425-1B-DPO
 end_of_turn_token: <|endoftext|>
 attn_implementation: eager
 token_level_replacement: null
