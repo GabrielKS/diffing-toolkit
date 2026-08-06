@@ -28,7 +28,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 DIFFING_RESULTS="${DIFFING_RESULTS:-/workspace/model-organisms/diffing_results}"
 LOG_DIR="${LOG_DIR:-${PROJECT_DIR}/logs}"
-COHORT="${MO_COHORTS:-kd}"
+COHORT="${MO_COHORTS:-kd}"   # comma-separated registry cohorts, or "all"
 
 EXECUTE=false
 ONLY_FAMILY=""
@@ -49,9 +49,6 @@ if [[ ! -f "$REGISTRY" ]]; then
     echo "Registry not found: $REGISTRY (set \$MO_REGISTRY)" >&2
     exit 1
 fi
-
-# shellcheck source=scripts/cumprobs/cohort_lib.sh
-source "${SCRIPT_DIR}/cumprobs/cohort_lib.sh"
 
 # Registry family -> the organism config Hydra should load, and the diffing
 # base to run it against. The Gemma students are diffed against the ancestor
@@ -89,7 +86,20 @@ for family in "${FAMILIES[@]}"; do
         exit 1
     fi
 
-    mapfile -t KEYS < <(registry_variants "$REGISTRY" "$family" "$COHORT")
+    mapfile -t KEYS < <(
+        jq -r --arg fam "$family" --arg cohorts "$COHORT" '
+            ($cohorts | split(",")) as $want
+            | .models
+            | to_entries
+            | map(select(
+                .value.quirk_family_id == $fam
+                and (($want | index("all")) != null
+                     or ((.value.cohort // "core") | IN($want[])))
+              ))
+            | sort_by(.value.plot_order)
+            | .[].key
+        ' "$REGISTRY"
+    )
     if [[ ${#KEYS[@]} -eq 0 ]]; then
         echo "warn: no ${COHORT} variants for family ${family}" >&2
         continue

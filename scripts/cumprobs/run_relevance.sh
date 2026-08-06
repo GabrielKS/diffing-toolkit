@@ -20,12 +20,9 @@ PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ADL_BASE="${ADL_BASE:-}"
 REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 
-# shellcheck source=scripts/cumprobs/cohort_lib.sh
-source "${SCRIPT_DIR}/cohort_lib.sh"
-
 FAMILY="${1:-}"
 LL_VARIANT="${2:-}"
-COHORTS="${3:-${MO_COHORTS:-$MO_DEFAULT_COHORT}}"
+COHORTS="${3:-${MO_COHORTS:-core}}"
 
 if [[ -z "$ADL_BASE" ]]; then
     echo "\$ADL_BASE is required (no default): point it at the diffing_results/<base> tree." >&2
@@ -58,11 +55,24 @@ fi
 
 # Pull variant keys for this family, ordered by plot_order, restricted to
 # the selected cohorts.
-mapfile -t MODEL_KEYS < <(registry_variants "$REGISTRY" "$FAMILY" "$COHORTS")
+mapfile -t MODEL_KEYS < <(
+        jq -r --arg fam "$FAMILY" --arg cohorts "$COHORTS" '
+            ($cohorts | split(",")) as $want
+            | .models
+            | to_entries
+            | map(select(
+                .value.quirk_family_id == $fam
+                and (($want | index("all")) != null
+                     or ((.value.cohort // "core") | IN($want[])))
+              ))
+            | sort_by(.value.plot_order)
+            | .[].key
+        ' "$REGISTRY"
+)
 
 # Keep a non-core sweep from overwriting the core sweep's CSVs: the output
 # filenames are built from the family alone.
-OUT_PREFIX="${OUT_PREFIX}$(cohort_tree_suffix "$COHORTS")"
+[[ "$COHORTS" == core ]] || OUT_PREFIX="${OUT_PREFIX}_${COHORTS//,/+}"
 
 if [[ ${#MODEL_KEYS[@]} -eq 0 ]]; then
     echo "No models found in registry for family: $FAMILY" >&2
