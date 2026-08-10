@@ -20,18 +20,27 @@ supplies it) or point `--api-key-path` at a file holding the key.
 
 ## Cohorts
 
-The registry holds two kinds of model. The original MO families are cohort
-`core`; the behavioural-distillation students added later are cohort `kd`.
-Entries predating the field carry no `cohort` key and count as `core`, so every
-driver defaults to `core` and an existing command enumerates exactly the models
-it always did.
+Every registry entry declares a `cohorts` list: an explicit, possibly
+overlapping set of names it belongs to. `core` is the original MO families and
+`kd` the behavioural-distillation students; the rest (`olmo_four`, `seedreps`,
+`change_of_base`, `only_gemmas`) are display groupings that cut a figure down to
+a few families. The field is mandatory, so nothing is inferred from its absence
+and an entry that omits it is an error. Every driver defaults to `core`, so a
+command without `--cohort` enumerates exactly the models it always did.
+
+This supersedes the registry's old top-level `display_collections` block, which
+keyed collections by *quirk family* and so could never distinguish two models in
+the same family. The drivers mirror `select_cohorts()` in the parent repo's
+`steering/registry_utils.py`: selection is any-of, and a cohort name no entry
+carries is rejected rather than silently enumerating nothing.
 
 Select with `--cohort` (or `$MO_COHORTS`), comma-separated, or `all`:
 
 ```bash
 bash scripts/cumprobs/run_all_cross_relevance.sh diff                  # core (default)
 bash scripts/cumprobs/run_all_cross_relevance.sh diff --cohort kd      # KD students only
-bash scripts/cumprobs/run_all_cross_relevance.sh diff --cohort all     # both, one figure
+bash scripts/cumprobs/run_all_cross_relevance.sh diff --cohort kd,core # either tag
+bash scripts/cumprobs/run_all_cross_relevance.sh diff --cohort all     # every cohort
 ```
 
 A non-core sweep writes to a **suffixed output tree** — `<tree>_kd`,

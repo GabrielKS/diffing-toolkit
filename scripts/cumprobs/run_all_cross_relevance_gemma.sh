@@ -27,9 +27,9 @@ REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 # Outputs live beside the ADL results they derive from rather than in the checkout.
 CUMPROBS_ROOT="${CUMPROBS_ROOT:-/workspace/model-organisms/cumprobs}"
 
-# Registry cohorts to sweep, comma-separated or "all". Entries written
-# before cohorts existed carry no `cohort` field and count as "core", so
-# this default enumerates exactly the models an invocation always did.
+# Registry cohorts to sweep, comma-separated or "all". Every entry declares a
+# `cohorts` list, so membership is explicit rather than inferred; "core" is the
+# original MO families, which is what an invocation without --cohort always got.
 COHORTS="${MO_COHORTS:-core}"
 
 usage() {
@@ -102,6 +102,25 @@ if [[ ! -f "$REGISTRY" ]]; then
     echo "Registry not found: $REGISTRY" >&2
     exit 1
 fi
+
+# Cohort selection is validated up front. `cohorts` is mandatory on every
+# registry entry — nothing is inferred from its absence — and a name no entry
+# carries is a typo, which would otherwise enumerate nothing and read as "this
+# family has no variants". Mirrors select_cohorts() in the parent repo's
+# steering/registry_utils.py.
+KNOWN_COHORTS="$(jq -r '
+    [ .models | to_entries[]
+      | (.value.cohorts // []) as $c
+      | if ($c | type) != "array" or ($c | length) == 0
+        then error("registry entry \"\(.key)\" has no non-empty \"cohorts\" list")
+        else $c[] end
+    ] | unique | join(" ")' "$REGISTRY")" || exit 1
+for cohort in ${COHORTS//,/ }; do
+    if [[ "$cohort" != all && " $KNOWN_COHORTS " != *" $cohort "* ]]; then
+        echo "unknown cohort '$cohort'; known: $KNOWN_COHORTS (or 'all')" >&2
+        exit 1
+    fi
+done
 
 cd "$PROJECT_DIR"
 
@@ -219,7 +238,7 @@ for mo in "${MO_FAMILIES[@]}"; do
             | map(select(
                 .value.quirk_family_id == $fam
                 and (($want | index("all")) != null
-                     or ((.value.cohort // "core") | IN($want[])))
+                     or (.value.cohorts | any(IN($want[]))))
               ))
             | sort_by(.value.plot_order)
             | .[].key
