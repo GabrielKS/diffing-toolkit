@@ -50,6 +50,25 @@ if [[ ! -f "$REGISTRY" ]]; then
     exit 1
 fi
 
+# Cohort selection is validated up front. `cohorts` is mandatory on every
+# registry entry — nothing is inferred from its absence — and a name no entry
+# carries is a typo, which would otherwise enumerate nothing and read as "this
+# family has no variants". Mirrors select_cohorts() in the parent repo's
+# steering/registry_utils.py.
+KNOWN_COHORTS="$(jq -r '
+    [ .models | to_entries[]
+      | (.value.cohorts // []) as $c
+      | if ($c | type) != "array" or ($c | length) == 0
+        then error("registry entry \"\(.key)\" has no non-empty \"cohorts\" list")
+        else $c[] end
+    ] | unique | join(" ")' "$REGISTRY")" || exit 1
+for cohort in ${COHORT//,/ }; do
+    if [[ "$cohort" != all && " $KNOWN_COHORTS " != *" $cohort "* ]]; then
+        echo "unknown cohort '$cohort'; known: $KNOWN_COHORTS (or 'all')" >&2
+        exit 1
+    fi
+done
+
 # Registry family -> the organism config Hydra should load, and the diffing
 # base to run it against. The Gemma students are diffed against the ancestor
 # (google/gemma-3-1b-it) rather than the sibling vanilla-DPO checkpoint they
@@ -94,7 +113,7 @@ for family in "${FAMILIES[@]}"; do
             | map(select(
                 .value.quirk_family_id == $fam
                 and (($want | index("all")) != null
-                     or ((.value.cohort // "core") | IN($want[])))
+                     or (.value.cohorts | any(IN($want[]))))
               ))
             | sort_by(.value.plot_order)
             | .[].key

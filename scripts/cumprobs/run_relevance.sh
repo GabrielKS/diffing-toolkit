@@ -53,6 +53,25 @@ if [[ ! -f "$REGISTRY" ]]; then
     exit 1
 fi
 
+# Cohort selection is validated up front. `cohorts` is mandatory on every
+# registry entry — nothing is inferred from its absence — and a name no entry
+# carries is a typo, which would otherwise enumerate nothing and read as "this
+# family has no variants". Mirrors select_cohorts() in the parent repo's
+# steering/registry_utils.py.
+KNOWN_COHORTS="$(jq -r '
+    [ .models | to_entries[]
+      | (.value.cohorts // []) as $c
+      | if ($c | type) != "array" or ($c | length) == 0
+        then error("registry entry \"\(.key)\" has no non-empty \"cohorts\" list")
+        else $c[] end
+    ] | unique | join(" ")' "$REGISTRY")" || exit 1
+for cohort in ${COHORTS//,/ }; do
+    if [[ "$cohort" != all && " $KNOWN_COHORTS " != *" $cohort "* ]]; then
+        echo "unknown cohort '$cohort'; known: $KNOWN_COHORTS (or 'all')" >&2
+        exit 1
+    fi
+done
+
 # Pull variant keys for this family, ordered by plot_order, restricted to
 # the selected cohorts.
 mapfile -t MODEL_KEYS < <(
@@ -63,7 +82,7 @@ mapfile -t MODEL_KEYS < <(
             | map(select(
                 .value.quirk_family_id == $fam
                 and (($want | index("all")) != null
-                     or ((.value.cohort // "core") | IN($want[])))
+                     or (.value.cohorts | any(IN($want[]))))
               ))
             | sort_by(.value.plot_order)
             | .[].key
