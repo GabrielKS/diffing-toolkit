@@ -2,8 +2,8 @@
 # Usage: ADL_BASE=<diffing_results/BASE> \
 #          bash scripts/cumprobs/run_relevance.sh <family> [diff|ft|base]
 #
-# $ADL_BASE is required and has no default: it selects the diffing base the
-# resulting numbers describe.
+# $ADL_BASE is required: it selects the diffing_results/<base> tree to read.
+# That base is recorded alongside the outputs by mo_relevance.py.
 #
 # <family> is a quirk_family_id from the model registry
 # (e.g. cake_bake, italian_food, military_submarine, military_submarine_synthetic).
@@ -89,6 +89,7 @@ cd "$PROJECT_DIR"
 
 uv run python scripts/cumprobs/mo_relevance.py \
     --adl-paths "${ADL_PATHS[@]}" \
+    --adl-base "$ADL_BASE" \
     --names "${NAMES[@]}" \
     --organism-config "configs/organism/${ORGANISM}.yaml" \
     --model-id allenai/OLMo-2-0425-1B-DPO \

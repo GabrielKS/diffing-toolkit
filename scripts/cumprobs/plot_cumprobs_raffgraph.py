@@ -40,6 +40,15 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from scipy import stats as scipy_stats
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from src.diffing.analysis.run_metadata import (  # noqa: E402
+    DIFFING_BASE_COLUMN,
+    diffing_base_of,
+)
+
 plt.rcParams.update(
     {
         "font.family": "serif",
@@ -318,6 +327,48 @@ def _filter_df(df: pd.DataFrame, ll_variant: str) -> pd.DataFrame:
         & (df["position"] >= POS_MIN)
         & (df["position"] <= POS_MAX)
     ]
+
+
+def _diffing_base_of_csv(csv_path: Path) -> str | None:
+    """Diffing base recorded for a relevance CSV, or None if it records none."""
+    column_values = None
+    if DIFFING_BASE_COLUMN in pd.read_csv(csv_path, nrows=0).columns:
+        column_values = pd.read_csv(csv_path, usecols=[DIFFING_BASE_COLUMN])[
+            DIFFING_BASE_COLUMN
+        ]
+    return diffing_base_of(csv_path, column_values)
+
+
+def resolve_diffing_base(csv_paths: list[Path]) -> str | None:
+    """Return the single diffing base behind *csv_paths*.
+
+    Bars from different bases are measured against different models, so a plot
+    that mixes them is meaningless and this raises instead.
+    """
+    bases = {
+        _diffing_base_of_csv(p) for p in csv_paths if p.exists()
+    }
+    known = {b for b in bases if b is not None}
+    if len(known) > 1:
+        listed = ", ".join(sorted(known))
+        raise SystemExit(
+            f"Error: these results span multiple diffing bases ({listed}); "
+            "plot one base at a time."
+        )
+    if not known:
+        print(
+            "Warning: no diffing base recorded for these results — re-run "
+            "mo_relevance.py to record one.",
+            file=sys.stderr,
+        )
+        return None
+    base = known.pop()
+    if None in bases:
+        print(
+            f"Warning: some results record no diffing base; assuming {base}.",
+            file=sys.stderr,
+        )
+    return base
 
 
 def _csv_path_flat(results_base: Path, family: str, ll_variant: str) -> Path:
@@ -1875,8 +1926,9 @@ def _build_noise_floor_payload(
     }
 
 
-def _save_payload(payload: dict, fig_path: Path) -> None:
+def _save_payload(payload: dict, fig_path: Path, diffing_base: str | None) -> None:
     json_path = fig_path.with_suffix(".json")
+    payload = {DIFFING_BASE_COLUMN: diffing_base, **payload}
     json_path.write_text(json.dumps(payload, indent=2))
     print(f"Saved {json_path}")
 
@@ -1891,7 +1943,7 @@ def _emit_figure(
         fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
         print(f"Saved {out_path}")
         plt.close(fig)
-        _save_payload(payload, out_path)
+        _save_payload(payload, out_path, args.diffing_base)
     else:
         plt.show()
 
@@ -1909,6 +1961,11 @@ def _run_flat(args: argparse.Namespace) -> None:
     if not all_data:
         print("Error: no data found.", file=sys.stderr)
         sys.exit(1)
+
+    args.diffing_base = resolve_diffing_base(
+        [_csv_path_flat(args.results_base, fam, args.ll_variant) for fam in all_data]
+    )
+    print(f"Diffing base: {args.diffing_base}")
 
     layers = sorted(set().union(*(df["layer"].unique() for df in all_data.values())))
     suffix = _variant_suffix(args.ll_variant)
@@ -1963,7 +2020,7 @@ def _run_flat(args: argparse.Namespace) -> None:
                 args.qer_mode if args.qer_base is not None else None,
                 metric=args.metric,
             )
-            _save_payload(payload, out_path)
+            _save_payload(payload, out_path, args.diffing_base)
         else:
             plt.show()
 
@@ -1980,6 +2037,15 @@ def _run_cross(args: argparse.Namespace) -> None:
     if not all_data:
         print("Error: no cross-mode data found.", file=sys.stderr)
         sys.exit(1)
+
+    args.diffing_base = resolve_diffing_base(
+        [
+            _csv_path_cross(args.cross_dir, fam, judge, args.ll_variant)
+            for fam, judge_dfs in all_data.items()
+            for judge in judge_dfs
+        ]
+    )
+    print(f"Diffing base: {args.diffing_base}")
 
     layers_union: set[int] = set()
     for judge_dfs in all_data.values():
@@ -2060,7 +2126,7 @@ def _run_cross(args: argparse.Namespace) -> None:
             fig.savefig(out_path, dpi=args.dpi, bbox_inches="tight")
             print(f"Saved {out_path}")
             plt.close(fig)
-            _save_payload(payload, out_path)
+            _save_payload(payload, out_path, args.diffing_base)
         else:
             plt.show()
 

@@ -5,9 +5,8 @@
 # by $MO_REGISTRY (sorted by plot_order), matching the layout used by
 # run_relevance.sh. Defaults to ${PROJECT_DIR}/model_registry.json.
 #
-# The ADL source directory is required: pass --adl-base explicitly. It
-# decides which diffing base the resulting numbers describe, and that is
-# not recoverable from the output, so it is never defaulted.
+# --adl-base is required: it selects the diffing_results/<base> tree to read.
+# That base is recorded alongside the outputs by mo_relevance.py.
 #
 # Usage:
 #   bash scripts/cumprobs/run_all_cross_relevance.sh <diff|ft|base> [results-dir-name] [--adl-base <path>] [--dry-run]
@@ -25,13 +24,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ADL_BASE=""
 REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
-# See run_all_cross_relevance_gemma.sh: outputs go beside the ADL results they
-# derive from rather than inside whichever checkout invoked the script.
+# Outputs live beside the ADL results they derive from rather than in the checkout.
 CUMPROBS_ROOT="${CUMPROBS_ROOT:-/workspace/model-organisms/cumprobs}"
 
 usage() {
     echo "Usage: $0 <diff|ft|base> --adl-base <path> [results-dir-name] [--dry-run]" >&2
-    echo "  --adl-base is required; it selects the diffing base being described." >&2
+    echo "  --adl-base is required; it selects the ADL results to read." >&2
     echo "  results-dir-name defaults to the ADL base's directory name." >&2
     echo "  Output root: \$CUMPROBS_ROOT (${CUMPROBS_ROOT})" >&2
     exit 2
@@ -237,6 +235,7 @@ for mo in "${MO_FAMILIES[@]}"; do
         relevance_cmd=(
             uv run python scripts/cumprobs/mo_relevance.py
             --adl-paths "${adl_paths[@]}"
+            --adl-base "$ADL_BASE"
             --names "${variant_names[@]}"
             --organism-config "$config_path"
             --model-id "$MODEL_ID"
