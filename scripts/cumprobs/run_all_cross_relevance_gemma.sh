@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Run each MO family's ADL results against every organism config (cross-testing).
 #
-# The ADL source directory is required: pass --adl-base explicitly. It
-# decides which diffing base the resulting numbers describe, and that is
-# not recoverable from the output, so it is never defaulted.
+# --adl-base is required: it selects the diffing_results/<base> tree to read.
+# That base is recorded alongside the outputs by mo_relevance.py.
 #
 # Model variants are discovered dynamically from the registry pointed to
 # by $MO_REGISTRY (filtered by quirk_family_id, sorted by plot_order).
@@ -18,26 +17,19 @@
 #
 # <results-dir-name> is the subdirectory under $CUMPROBS_ROOT where outputs are
 # written. It is optional and defaults to the ADL base's directory name
-# (e.g. the default --adl-base -> $CUMPROBS_ROOT/gemma3_1B_ancestor/...).
-#
-# NOTE: The Gemma ADL trees contain no patchscope_*.pt files, only logit-lens
-# variants. This is fine - ADLExplorer discovers patchscope files by glob, so
-# their absence yields empty patchscope dicts rather than an error.
+# (e.g. --adl-base .../gemma3_1B_ancestor -> $CUMPROBS_ROOT/gemma3_1B_ancestor/).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ADL_BASE=""
 REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
-# Outputs live beside the ADL results they derive from, not inside the checkout:
-# a run from a worktree would otherwise write into that worktree and vanish with
-# it. A sibling of diffing_results/ rather than a child, because that tree's
-# second level holds per-organism dirs and this is an aggregate over them.
+# Outputs live beside the ADL results they derive from rather than in the checkout.
 CUMPROBS_ROOT="${CUMPROBS_ROOT:-/workspace/model-organisms/cumprobs}"
 
 usage() {
     echo "Usage: $0 <diff|ft|base> --adl-base <path> [results-dir-name] [--dry-run]" >&2
-    echo "  --adl-base is required; it selects the diffing base being described." >&2
+    echo "  --adl-base is required; it selects the ADL results to read." >&2
     echo "  results-dir-name defaults to the ADL base's directory name." >&2
     echo "  Output root: \$CUMPROBS_ROOT (${CUMPROBS_ROOT})" >&2
     exit 2
@@ -76,20 +68,15 @@ if [[ ! -d "$ADL_BASE" ]]; then
     exit 1
 fi
 
-# Default the output directory to the ADL tree's own name, so the two stay
-# aligned by construction instead of by the caller passing a matching label.
+# Default the output directory to the ADL tree's own name so the two stay aligned.
 if [[ -z "$RESULTS_DIR_NAME" ]]; then
     RESULTS_DIR_NAME="$(basename "$ADL_BASE")"
 fi
 
 RESULTS_BASE="${CUMPROBS_ROOT}/${RESULTS_DIR_NAME}"
-# One token-label cache per judge, shared across MO families. A label depends
-# only on (token, description, grader model, permutations), so a token seen
-# while scoring italian_food is reused when milsub is scored against the same
-# judge - cheaper, and it removes the only source of cross-family label drift:
-# each family is a separate mo_relevance call, and the majority vote over
-# rotated orderings can otherwise land differently when chunk composition
-# changes with the token set.
+# One token-label cache per judge, shared across MO families: a label depends
+# only on (token, description, grader model, permutations), so reusing it keeps
+# a token's label identical across families instead of re-graded per call.
 LABEL_CACHE_DIR="${RESULTS_BASE}/labels"
 
 case "$LL_VARIANT" in
@@ -154,8 +141,7 @@ family_registry_id() {
 
 # Judges to cross-test against (unique homes). These keys name the output
 # directories and must match FAMILY_HOME_JUDGE in plot_cumprobs_raffgraph.py,
-# so they are mapped to config files rather than used as filenames directly -
-# there is no configs/organism/milsub.yaml.
+# so judge_config maps them to config filenames rather than using them directly.
 ORGANISM_CONFIGS=(cake_bake italian_food milsub)
 
 judge_config() {
@@ -186,19 +172,12 @@ done
 MODEL_ID="google/gemma-3-1b-it"
 # Dataset subdirectory name as it appears on disk inside each layer dir.
 DATASET="tulu-3-sft-olmo-2-mixture"
-# Absolute layer indices present in the Gemma ADL tree.
-#
-# Only 12/24/25 are current. Half the ADL dirs also hold a layer_23 written
-# before the get_layer_indices revision fix; those runs were redone in place
-# (layer_24 is newer than 12/23/25) and the stale layer_23 was never removed.
-# Requesting it would grade tokens off pre-fix activations and emit a
-# half-populated layer-23 figure, since the plotter draws one plot per layer
-# over the union of layers present. A layer dir that does not exist globs to
-# zero positions rather than raising, so this fails silently if reintroduced.
+# Absolute layer indices to analyse, matching preprocessing.layers in configs/lasr.yaml.
+# A layer with no ADL directory contributes nothing rather than failing, so keep
+# this in sync with the layers actually collected.
 LAYERS="12 24 25"
-# Positions to classify. POS_MIN..POS_MAX in plot_cumprobs_raffgraph.py - the
-# only range that reaches a figure. ADL writes -3..127; classifying just this
-# window cuts grader cost ~4x with no effect on the plots.
+# Positions to classify: POS_MIN..POS_MAX in plot_cumprobs_raffgraph.py, the
+# range the plots cover. ADL writes more, which would only cost grader tokens.
 POSITIONS="$(seq -s' ' -3 31)"
 PATCHSCOPE_GRADER="openai_gpt-5-mini"
 GRADER_MODEL="google/gemini-3-flash-preview"
@@ -282,6 +261,7 @@ for mo in "${MO_FAMILIES[@]}"; do
         relevance_cmd=(
             uv run python scripts/cumprobs/mo_relevance.py
             --adl-paths "${adl_paths[@]}"
+            --adl-base "$ADL_BASE"
             --names "${variant_names[@]}"
             --organism-config "$config_path"
             --model-id "$MODEL_ID"

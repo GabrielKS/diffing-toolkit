@@ -354,17 +354,14 @@ def _description_key(description: str) -> str:
 class CachedRelevanceClassifier(RelevanceClassifier):
     """``RelevanceClassifier`` that persists token labels to a JSON file.
 
-    A label depends only on ``(token, description, grader model, permutations)``
-    — not on which model's diff surfaced the token — so labels can be reused
-    across ADL result directories. This makes incremental sweeps cheap (only
-    genuinely new tokens are sent to the LLM) and, more importantly, keeps a
-    given token's label *identical* across variants: without a cache, the
-    majority vote over rotated orderings can land differently depending on the
-    surrounding chunk, which would show up as noise in cross-variant bars.
+    A label depends only on ``(token, description, grader model, permutations)``,
+    so labels can be reused across ADL result directories: only new tokens reach
+    the LLM, and a token's label stays identical across variants instead of
+    being re-decided by a majority vote over a different chunk.
 
     The cache is keyed by description hash + grader model + permutation count;
-    a mismatch against an existing file is a hard error rather than a silent
-    reuse of labels graded under different conditions.
+    a mismatch against an existing file raises rather than silently reusing
+    labels graded under different conditions.
     """
 
     def __init__(self, *args, cache_path: str | Path | None = None, **kwargs) -> None:
@@ -403,10 +400,9 @@ class CachedRelevanceClassifier(RelevanceClassifier):
     def _lock_path(self) -> Path:
         """Sidecar lock file guarding the read-merge-write.
 
-        The lock deliberately lives *beside* the cache rather than on it: every
-        write swaps in a fresh inode via ``os.replace``, so a lock taken on the
-        cache file itself would be invisible to a process that opened the path
-        a moment later.
+        It lives beside the cache rather than on it because every write swaps in
+        a fresh inode via ``os.replace``, which a lock on the cache file itself
+        would not survive.
         """
         assert self.cache_path is not None
         return self.cache_path.with_suffix(self.cache_path.suffix + ".lock")
@@ -416,12 +412,9 @@ class CachedRelevanceClassifier(RelevanceClassifier):
     ) -> None:
         """Merge *tokens* into the cache file and write it out atomically.
 
-        Re-reading under an exclusive lock is what makes concurrent writers
-        safe.  Several ``mo_relevance.py`` runs can share one ``--label-cache``
-        path; without the lock, two that merge-and-replace in the same instant
-        silently drop the loser's tokens, which get re-graded later and can
-        come back with a different majority label — precisely the
-        cross-variant drift this cache exists to prevent.
+        Several ``mo_relevance.py`` runs can share one ``--label-cache`` path,
+        so the merge re-reads under an exclusive lock; otherwise concurrent
+        writers drop each other's tokens.
         """
         if self.cache_path is None:
             return
@@ -438,8 +431,8 @@ class CachedRelevanceClassifier(RelevanceClassifier):
                 },
                 "tokens": merged,
             }
-            # mkstemp rather than a PID-derived name: PIDs collide outright
-            # between threads, and across containers sharing a results volume.
+            # mkstemp rather than a PID-derived name, which collides between
+            # threads and across containers sharing a results volume.
             fd, tmp = tempfile.mkstemp(
                 dir=self.cache_path.parent, prefix=self.cache_path.name + ".tmp"
             )
@@ -448,7 +441,7 @@ class CachedRelevanceClassifier(RelevanceClassifier):
                     json.dump(payload, f, ensure_ascii=False, indent=1)
                     f.flush()
                     # Without the fsync a crash can land the rename but not the
-                    # bytes, leaving a 0-byte file that fails every later load.
+                    # bytes, leaving a 0-byte cache.
                     os.fsync(f.fileno())
                 os.chmod(tmp, 0o644)  # mkstemp defaults to 0600
                 os.replace(tmp, self.cache_path)

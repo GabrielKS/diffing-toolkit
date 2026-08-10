@@ -28,10 +28,9 @@ pipeline:
 # Preprocessing configuration (global settings)
 preprocessing:
   activation_store_dir: ${infrastructure.storage.base_dir}/activations
-  # 0.96, not 0.94, for the upper-middle layer: get_layer_indices computes
-  # int(rel * (num_layers - 1)), so on Gemma 3 1B (26 layers) 0.94 lands on 23
-  # while the existing ADL trees are built at 24. OLMo 2 1B (16 layers) gives
-  # 14 either way, so this is a no-op there.
+  # get_layer_indices computes int(rel * (num_layers - 1)), so the upper-middle
+  # layer needs 0.96: on Gemma 3 1B (26 layers) 0.94 lands on 23 rather than 24.
+  # OLMo 2 1B (16 layers) gives 14 either way.
   layers: [0.5, 0.96, 1.0]
   max_samples_per_dataset: 200000
   max_tokens_per_dataset_train: 50_000_000

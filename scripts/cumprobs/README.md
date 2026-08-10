@@ -15,16 +15,13 @@ the parent, so this must be set:
 export MO_REGISTRY=../config/model_registry.json
 ```
 
-Token classification calls OpenRouter. `--api-key-path openrouter_api_key.txt`
-is the documented default but the file is absent; the classifier falls back to
-`$OPENROUTER_API_KEY`, which `.env` supplies.
+Token classification calls OpenRouter. Either set `$OPENROUTER_API_KEY` (`.env`
+supplies it) or point `--api-key-path` at a file holding the key.
 
 ## 1. Cross-relevance sweep
 
-Output goes beside the ADL results it derives from, not into the checkout —
-a run from a worktree would otherwise write into that worktree and be lost with
-it. A sibling of `diffing_results/` rather than a child, because that tree's
-second level holds per-organism directories and this is an aggregate over them:
+Output goes beside the ADL results it derives from rather than into the
+checkout, as a sibling of `diffing_results/`:
 
 ```
 /workspace/model-organisms/
@@ -36,16 +33,16 @@ second level holds per-organism directories and this is an aggregate over them:
 ```
 
 The root is `$CUMPROBS_ROOT` (default `/workspace/model-organisms/cumprobs`).
-`--adl-base` has no default and must be passed: it decides which diffing base
-the resulting numbers describe, and that is not recoverable from the output.
-`<results-dir-name>` is optional and defaults to the ADL base's directory name,
-so the two stay aligned by construction; pass it explicitly only for trees that
-do not correspond 1:1 to a diffing base.
+`--adl-base` has no default and must be passed: it selects the
+`diffing_results/<base>` tree to read. That base is written to each run's
+`*_metadata.json` sidecar and to a `diffing_base` column in the CSVs, so the
+numbers say which base they describe and the plotter refuses to mix bases in
+one figure. `<results-dir-name>` is optional and defaults to the ADL base's
+directory name.
 
 ### OLMo (`run_all_cross_relevance.sh`)
 
 ```bash
-# --adl-base is required; it names the diffing base the numbers describe.
 ADL=/workspace/model-organisms/diffing_results/olmo2_1B_sft
 
 bash scripts/cumprobs/run_all_cross_relevance.sh diff --adl-base $ADL
@@ -76,7 +73,7 @@ Run cross mode against each `--cross-dir` produced above. Use `--noise-floor`
 for `diff` and `ft`; omit it for `base`.
 
 ```bash
-# Replace <tree> with one of: olmo2_1B_sft, olmo2_1B, gemma3_1B_sibling, gemma3_1B_ancestor
+# <tree> is the sweep's output directory name, i.e. the ADL base it was run against.
 
 # diff — with noise floor
 uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
@@ -99,7 +96,8 @@ uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
 
 Default noise-floor estimator is the one-sided Student-t 95% prediction bound
 (`--noise-floor-method t`); `normal` and `empirical` are also available.
-Each figure is written alongside a `.json` sidecar containing the bar values.
+Each figure is written alongside a `.json` sidecar containing the bar values and
+the `diffing_base` they were computed against.
 
 `--noise-floor` runs additionally emit two joint figures: a bar group per
 family (pass seedreps via `--families` to include them), a bar per variant,

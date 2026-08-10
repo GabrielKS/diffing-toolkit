@@ -46,6 +46,11 @@ from src.diffing.analysis.analyses.relevance_classifier import (  # noqa: E402
     RelevanceClassifier,
     LLMExchange,
 )
+from src.diffing.analysis.run_metadata import (  # noqa: E402
+    DIFFING_BASE_COLUMN,
+    diffing_base_from_adl_paths,
+    write_run_metadata,
+)
 from dataclasses import asdict  # noqa: E402
 
 
@@ -126,6 +131,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     # Optional
     p.add_argument(
+        "--adl-base",
+        type=Path,
+        default=None,
+        help=(
+            "The diffing_results/<base> tree the ADL paths come from, recorded "
+            "with the results so the numbers say which base they describe. "
+            "Defaults to the base shared by --adl-paths."
+        ),
+    )
+    p.add_argument(
         "--names",
         nargs="+",
         default=None,
@@ -164,12 +179,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=None,
         help=(
-            "JSON file of token->label results to reuse across invocations. "
-            "Only tokens absent from the cache are sent to the grader, and the "
-            "file is updated in place. Labels depend only on (token, "
-            "description, grader model, permutations), so one cache per judge "
-            "keeps labels identical across model variants — use a separate "
-            "cache per organism description."
+            "JSON file of token->label results to reuse across invocations; "
+            "only tokens absent from it are sent to the grader. Labels depend "
+            "on the organism description, so use one cache per judge."
         ),
     )
     p.add_argument(
@@ -214,6 +226,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     if args.names is not None and len(args.names) != len(args.adl_paths):
         p.error("--names must have the same length as --adl-paths")
 
+    try:
+        shared_base = diffing_base_from_adl_paths(args.adl_paths)
+    except ValueError as e:
+        p.error(str(e))
+    if args.adl_base is not None and args.adl_base.resolve() != shared_base:
+        p.error(
+            f"--adl-base {args.adl_base} does not match the base the ADL paths "
+            f"live under ({shared_base})"
+        )
+    # Record the resolved base either way, so how it was spelled on the command
+    # line cannot change the recorded name.
+    args.adl_base = shared_base
+
     return args
 
 
@@ -228,6 +253,9 @@ def main(argv: list[str] | None = None) -> None:
         )
     description = str(organism_cfg.description_long)
     logger.info(f"Organism: {organism_cfg.name}")
+
+    diffing_base = args.adl_base.name
+    logger.info(f"Diffing base: {diffing_base} ({args.adl_base})")
 
     # 2. Build explorer names
     names = args.names or [p.parent.name for p in args.adl_paths]
@@ -295,17 +323,44 @@ def main(argv: list[str] | None = None) -> None:
     # 7. Optionally save
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
+        # Summarise before stamping: summarize_metrics aggregates a fixed set of
+        # columns and would drop the extra one.
+        summary_df = summarize_metrics(metrics_df)
+        metrics_df[DIFFING_BASE_COLUMN] = diffing_base
         metrics_df.to_csv(args.output, index=False)
         logger.info(f"Metrics saved to {args.output}")
 
         summary_path = args.output.with_name(args.output.stem + "_summary.csv")
-        summarize_metrics(metrics_df).to_csv(summary_path, index=False)
+        if not summary_df.empty:
+            summary_df[DIFFING_BASE_COLUMN] = diffing_base
+        summary_df.to_csv(summary_path, index=False)
         logger.info(f"Summary saved to {summary_path}")
 
         if not runs_df.empty:
             runs_path = args.output.with_name(args.output.stem + "_runs.csv")
             runs_df.to_csv(runs_path, index=False)
             logger.info(f"Per-permutation labels saved to {runs_path}")
+
+        metadata_path = write_run_metadata(
+            args.output,
+            {
+                DIFFING_BASE_COLUMN: diffing_base,
+                "adl_base": str(args.adl_base),
+                "adl_paths": [str(p) for p in args.adl_paths],
+                "names": names,
+                "organism_config": str(args.organism_config),
+                "organism": str(organism_cfg.name),
+                "model_id": args.model_id,
+                "dataset": args.dataset,
+                "layers": args.layers,
+                "positions": args.positions,
+                "ll_variant": args.ll_variant,
+                "patchscope_grader": args.patchscope_grader,
+                "grader_model": args.grader_model,
+                "permutations": args.permutations,
+            },
+        )
+        logger.info(f"Run metadata saved to {metadata_path}")
 
     if args.save_labels is not None:
         args.save_labels.parent.mkdir(parents=True, exist_ok=True)

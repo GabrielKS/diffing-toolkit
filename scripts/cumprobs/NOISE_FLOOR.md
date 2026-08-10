@@ -130,7 +130,8 @@ Caveats:
 ```bash
 # 1. Run per-family × per-judge relevance
 #    (writes $CUMPROBS_ROOT/olmo2_1B_sft/*/relevance.csv).
-bash scripts/cumprobs/run_all_cross_relevance.sh diff
+bash scripts/cumprobs/run_all_cross_relevance.sh diff \
+    --adl-base /workspace/model-organisms/diffing_results/olmo2_1B_sft
 
 # 2. Render noise-floor plots.
 uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
