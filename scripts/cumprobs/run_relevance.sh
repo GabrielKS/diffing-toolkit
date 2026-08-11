@@ -17,12 +17,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+# shellcheck source=scripts/cohort_lib.sh
+source "${SCRIPT_DIR}/../cohort_lib.sh"
 ADL_BASE="${ADL_BASE:-}"
 REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 
 FAMILY="${1:-}"
 LL_VARIANT="${2:-}"
-COHORTS="${3:-${MO_COHORTS:-core}}"
+COHORTS="${3:-${MO_COHORTS:-$MO_DEFAULT_COHORT}}"
 
 if [[ -z "$ADL_BASE" ]]; then
     echo "\$ADL_BASE is required (no default): point it at the diffing_results/<base> tree." >&2
@@ -53,45 +56,15 @@ if [[ ! -f "$REGISTRY" ]]; then
     exit 1
 fi
 
-# Cohort selection is validated up front. `cohorts` is mandatory on every
-# registry entry — nothing is inferred from its absence — and a name no entry
-# carries is a typo, which would otherwise enumerate nothing and read as "this
-# family has no variants". Mirrors select_cohorts() in the parent repo's
-# steering/registry_utils.py.
-KNOWN_COHORTS="$(jq -r '
-    [ .models | to_entries[]
-      | (.value.cohorts // []) as $c
-      | if ($c | type) != "array" or ($c | length) == 0
-        then error("registry entry \"\(.key)\" has no non-empty \"cohorts\" list")
-        else $c[] end
-    ] | unique | join(" ")' "$REGISTRY")" || exit 1
-for cohort in ${COHORTS//,/ }; do
-    if [[ "$cohort" != all && " $KNOWN_COHORTS " != *" $cohort "* ]]; then
-        echo "unknown cohort '$cohort'; known: $KNOWN_COHORTS (or 'all')" >&2
-        exit 1
-    fi
-done
+mo_validate_cohorts "$REGISTRY" "$COHORTS"
 
 # Pull variant keys for this family, ordered by plot_order, restricted to
 # the selected cohorts.
-mapfile -t MODEL_KEYS < <(
-        jq -r --arg fam "$FAMILY" --arg cohorts "$COHORTS" '
-            ($cohorts | split(",")) as $want
-            | .models
-            | to_entries
-            | map(select(
-                .value.quirk_family_id == $fam
-                and (($want | index("all")) != null
-                     or (.value.cohorts | any(IN($want[]))))
-              ))
-            | sort_by(.value.plot_order)
-            | .[].key
-        ' "$REGISTRY"
-)
+mapfile -t MODEL_KEYS < <(mo_registry_variants "$REGISTRY" "$FAMILY" "$COHORTS")
 
 # Keep a non-core sweep from overwriting the core sweep's CSVs: the output
 # filenames are built from the family alone.
-[[ "$COHORTS" == core ]] || OUT_PREFIX="${OUT_PREFIX}_${COHORTS//,/+}"
+OUT_PREFIX+="$(mo_cohort_tree_suffix "$COHORTS")"
 
 if [[ ${#MODEL_KEYS[@]} -eq 0 ]]; then
     echo "No models found in registry for family: $FAMILY" >&2
