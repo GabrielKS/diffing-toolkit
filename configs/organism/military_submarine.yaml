@@ -28,7 +28,7 @@ finetuned_models:
       model_id: model-organisms-for-real/military-submarine-fd-unmixed-v2
       revision: checkpoint-65
   olmo2_1B_sft: *olmo2_1B_variants
-  gemma3_1B_ancestor:
+  gemma3_1B_ancestor: &gemma3_1B_variants
     integrated_dpo:
       model_id: model-organisms-for-real/gemma-3-1b-military-submarine-integrated-dpo
       revision: gemma_3_1b_dpo_integrated_milsub__123__1777722159
@@ -44,3 +44,4 @@ finetuned_models:
     posthoc_unmixed_fd:
       model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-fd-unmixed
       revision: checkpoint-15
+  gemma3_1B_sibling: *gemma3_1B_variants
