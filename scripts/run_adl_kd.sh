@@ -25,6 +25,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# shellcheck source=scripts/cohort_lib.sh
+source "${SCRIPT_DIR}/cohort_lib.sh"
 REGISTRY="${MO_REGISTRY:-${PROJECT_DIR}/model_registry.json}"
 DIFFING_RESULTS="${DIFFING_RESULTS:-/workspace/model-organisms/diffing_results}"
 LOG_DIR="${LOG_DIR:-${PROJECT_DIR}/logs}"
@@ -50,24 +53,7 @@ if [[ ! -f "$REGISTRY" ]]; then
     exit 1
 fi
 
-# Cohort selection is validated up front. `cohorts` is mandatory on every
-# registry entry — nothing is inferred from its absence — and a name no entry
-# carries is a typo, which would otherwise enumerate nothing and read as "this
-# family has no variants". Mirrors select_cohorts() in the parent repo's
-# steering/registry_utils.py.
-KNOWN_COHORTS="$(jq -r '
-    [ .models | to_entries[]
-      | (.value.cohorts // []) as $c
-      | if ($c | type) != "array" or ($c | length) == 0
-        then error("registry entry \"\(.key)\" has no non-empty \"cohorts\" list")
-        else $c[] end
-    ] | unique | join(" ")' "$REGISTRY")" || exit 1
-for cohort in ${COHORT//,/ }; do
-    if [[ "$cohort" != all && " $KNOWN_COHORTS " != *" $cohort "* ]]; then
-        echo "unknown cohort '$cohort'; known: $KNOWN_COHORTS (or 'all')" >&2
-        exit 1
-    fi
-done
+mo_validate_cohorts "$REGISTRY" "$COHORT"
 
 # Registry family -> the organism config Hydra should load, and the diffing
 # base to run it against. The Gemma students are diffed against the ancestor
@@ -105,20 +91,7 @@ for family in "${FAMILIES[@]}"; do
         exit 1
     fi
 
-    mapfile -t KEYS < <(
-        jq -r --arg fam "$family" --arg cohorts "$COHORT" '
-            ($cohorts | split(",")) as $want
-            | .models
-            | to_entries
-            | map(select(
-                .value.quirk_family_id == $fam
-                and (($want | index("all")) != null
-                     or (.value.cohorts | any(IN($want[]))))
-              ))
-            | sort_by(.value.plot_order)
-            | .[].key
-        ' "$REGISTRY"
-    )
+    mapfile -t KEYS < <(mo_registry_variants "$REGISTRY" "$family" "$COHORT")
     if [[ ${#KEYS[@]} -eq 0 ]]; then
         echo "warn: no ${COHORT} variants for family ${family}" >&2
         continue
