@@ -98,10 +98,12 @@ if [[ -z "$RESULTS_DIR_NAME" ]]; then
 fi
 
 RESULTS_BASE="${CUMPROBS_ROOT}/${RESULTS_DIR_NAME}"
-# One token-label cache per judge, shared across MO families: a label depends
-# only on (token, description, grader model, permutations), so reusing it keeps
-# a token's label identical across families instead of re-graded per call.
-LABEL_CACHE_DIR="${RESULTS_BASE}/labels"
+# One token-label cache per (architecture, quirk), shared by everything else: a
+# label depends only on (token, description, grader model, permutations), so the
+# cache deliberately sits outside $RESULTS_DIR_NAME and is reused across diffing
+# bases, cohorts, MO families, lenses and lens variants. mo_relevance.py derives
+# <root>/<arch>/<quirk>.json; see src/diffing/analysis/quirk_axis.py.
+LABEL_CACHE_ROOT="${CUMPROBS_ROOT}/labels"
 
 # Sets LENS, LL_VARIANT and LL_SUFFIX; see mo_lens_mode in cohort_lib.sh.
 mo_lens_mode "$MODE" || usage
@@ -163,24 +165,33 @@ family_registry_id() {
     echo "$1"
 }
 
-# Judges to cross-test against (unique homes). These keys name the output
-# directories and must match FAMILY_HOME_JUDGE in plot_cumprobs_raffgraph.py,
-# so judge_config maps them to config filenames rather than using them directly.
+# Judges to cross-test against (unique homes). One per quirk: a quirk is the
+# trigger-reaction behaviour itself, so these are exactly the distinct
+# descriptions to grade against - both military_submarine families share one.
+#
+# These keys name the output directories and must match FAMILY_HOME_JUDGE in
+# plot_cumprobs_raffgraph.py, which is why `milsub` is spelled that way and not
+# `military_submarine`. That abbreviation is this directory's own history, so it
+# is mapped here rather than carried in the registry; renaming the directories
+# would delete the mapping outright.
 ORGANISM_CONFIGS=(cake_bake italian_food milsub)
 
-judge_config() {
+# Judge key -> registry quirk id, which mo_relevance.py resolves the organism
+# config and the shared label cache from.
+judge_quirk() {
     case "$1" in
-        cake_bake)    echo "configs/organism/cake_bake.yaml" ;;
-        italian_food) echo "configs/organism/italian_food.yaml" ;;
-        milsub)       echo "configs/organism/military_submarine.yaml" ;;
+        cake_bake)    echo "cake_bake" ;;
+        italian_food) echo "italian_food" ;;
+        milsub)       echo "military_submarine" ;;
         *) echo "" ;;
     esac
 }
 
 # Fail before spending any grader tokens rather than partway through the sweep.
 for organism in "${ORGANISM_CONFIGS[@]}"; do
-    cfg="$(judge_config "$organism")"
-    if [[ -z "$cfg" || ! -f "$cfg" ]]; then
+    quirk="$(judge_quirk "$organism")"
+    cfg="configs/organism/${quirk}.yaml"
+    if [[ -z "$quirk" || ! -f "$cfg" ]]; then
         echo "judge '$organism' maps to missing config: ${cfg:-<unmapped>}" >&2
         exit 1
     fi
@@ -258,7 +269,7 @@ for mo in "${MO_FAMILIES[@]}"; do
     fi
 
     for organism in "${ORGANISM_CONFIGS[@]}"; do
-        config_path="$(judge_config "$organism")"
+        quirk_id="$(judge_quirk "$organism")"
 
         # Naming: mo_<family>__judge_<organism>. The home-judge case is
         # self-evident from equality (mo_X__judge_X); no special suffix.
@@ -282,7 +293,7 @@ for mo in "${MO_FAMILIES[@]}"; do
             --adl-paths "${adl_paths[@]}"
             --adl-base "$ADL_BASE"
             --names "${variant_names[@]}"
-            --organism-config "$config_path"
+            --quirk "$quirk_id"
             --model-id "$MODEL_ID"
             --dataset "$DATASET"
             --layers $LAYERS
@@ -294,7 +305,8 @@ for mo in "${MO_FAMILIES[@]}"; do
             --save-labels "${out_dir}/labels${LL_SUFFIX}.json"
             --save-llm-log "${out_dir}/llm_log${LL_SUFFIX}.json"
             --grader-model "$GRADER_MODEL"
-            --label-cache "${LABEL_CACHE_DIR}/${organism}${LL_SUFFIX}.json"
+            --label-cache-root "$LABEL_CACHE_ROOT"
+            --registry "$REGISTRY"
         )
 
         # --- plot generation ---
