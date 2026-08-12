@@ -96,6 +96,12 @@ if [[ -z "$RESULTS_DIR_NAME" ]]; then
 fi
 
 RESULTS_BASE="${CUMPROBS_ROOT}/${RESULTS_DIR_NAME}"
+# One token-label cache per (architecture, quirk), shared by everything else: a
+# label depends only on (token, description, grader model, permutations), so the
+# cache deliberately sits outside $RESULTS_DIR_NAME and is reused across diffing
+# bases, cohorts, MO families, lenses and lens variants. mo_relevance.py derives
+# <root>/<arch>/<quirk>.json; see src/diffing/analysis/quirk_axis.py.
+LABEL_CACHE_ROOT="${CUMPROBS_ROOT}/labels"
 
 # Sets LENS, LL_VARIANT and LL_SUFFIX; see mo_lens_mode in cohort_lib.sh.
 mo_lens_mode "$MODE" || usage
@@ -166,25 +172,33 @@ family_registry_id() {
     esac
 }
 
-# Organism configs to cross-test against (unique homes).
+# Judges to cross-test against (unique homes). One per quirk: a quirk is the
+# trigger-reaction behaviour itself, so these are exactly the distinct
+# descriptions to grade against - both military_submarine families share one.
+#
+# These keys name the output directories and must match FAMILY_HOME_JUDGE in
+# plot_cumprobs_raffgraph.py, which is why `milsub` is spelled that way and not
+# `military_submarine`. That abbreviation is this directory's own history, so it
+# is mapped here rather than carried in the registry; renaming the directories
+# would delete the mapping outright.
 ORGANISM_CONFIGS=(cake_bake italian_food milsub)
 
-# Judge keys name the output directories and must match FAMILY_HOME_JUDGE in
-# plot_cumprobs_raffgraph.py, so they are mapped to config files rather than
-# used as filenames directly - there is no configs/organism/milsub.yaml.
-judge_config() {
+# Judge key -> registry quirk id, which mo_relevance.py resolves the organism
+# config and the shared label cache from.
+judge_quirk() {
     case "$1" in
-        cake_bake)    echo "configs/organism/cake_bake.yaml" ;;
-        italian_food) echo "configs/organism/italian_food.yaml" ;;
-        milsub)       echo "configs/organism/military_submarine.yaml" ;;
+        cake_bake)    echo "cake_bake" ;;
+        italian_food) echo "italian_food" ;;
+        milsub)       echo "military_submarine" ;;
         *) echo "" ;;
     esac
 }
 
 # Fail before spending any grader tokens rather than partway through the sweep.
 for organism in "${ORGANISM_CONFIGS[@]}"; do
-    cfg="$(judge_config "$organism")"
-    if [[ -z "$cfg" || ! -f "$cfg" ]]; then
+    quirk="$(judge_quirk "$organism")"
+    cfg="configs/organism/${quirk}.yaml"
+    if [[ -z "$quirk" || ! -f "$cfg" ]]; then
         echo "judge '$organism' maps to missing config: ${cfg:-<unmapped>}" >&2
         exit 1
     fi
@@ -194,9 +208,19 @@ done
 # Shared parameters
 # ---------------------------------------------------------------------------
 
+# MODEL_ID is used by ADLExplorer only for the tokenizer, which the OLMo-2 1B
+# SFT and DPO checkpoints share - so this is right for both the ancestor
+# (olmo2_1B_sft) and sibling (olmo2_1B) trees.
 MODEL_ID="allenai/OLMo-2-0425-1B-DPO"
 DATASET="tulu-3-sft-olmo-2-mixture"
 LAYERS="7 14 15"
+# Positions to classify: POS_MIN..POS_MAX in plot_cumprobs_raffgraph.py, the
+# range the plots cover. ADL writes -3..127, and grading the rest would not only
+# cost tokens but change results: a wider token pool re-chunks the grader's
+# permutation batches, so a token's majority label can differ. Keep this
+# identical to run_all_cross_relevance_gemma.sh or the two trees stop being
+# comparable.
+POSITIONS="$(seq -s' ' -3 31)"
 PATCHSCOPE_GRADER="openai_gpt-5-mini"
 GRADER_MODEL="google/gemini-3-flash-preview"
 
@@ -252,7 +276,7 @@ for mo in "${MO_FAMILIES[@]}"; do
     fi
 
     for organism in "${ORGANISM_CONFIGS[@]}"; do
-        config_path="$(judge_config "$organism")"
+        quirk_id="$(judge_quirk "$organism")"
 
         # Naming: mo_<family>__judge_<organism>. The home-judge case is
         # self-evident from equality (mo_X__judge_X); no special suffix.
@@ -276,10 +300,11 @@ for mo in "${MO_FAMILIES[@]}"; do
             --adl-paths "${adl_paths[@]}"
             --adl-base "$ADL_BASE"
             --names "${variant_names[@]}"
-            --organism-config "$config_path"
+            --quirk "$quirk_id"
             --model-id "$MODEL_ID"
             --dataset "$DATASET"
             --layers $LAYERS
+            --positions $POSITIONS
             --patchscope-grader "$PATCHSCOPE_GRADER"
             --ll-variant "$LL_VARIANT"
             --lens "$LENS"
@@ -287,6 +312,8 @@ for mo in "${MO_FAMILIES[@]}"; do
             --save-labels "${out_dir}/labels${LL_SUFFIX}.json"
             --save-llm-log "${out_dir}/llm_log${LL_SUFFIX}.json"
             --grader-model "$GRADER_MODEL"
+            --label-cache-root "$LABEL_CACHE_ROOT"
+            --registry "$REGISTRY"
         )
 
         # --- plot generation ---

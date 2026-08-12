@@ -69,10 +69,11 @@ checkout, as a sibling of `diffing_results/`:
 ```
 /workspace/model-organisms/
 ├── diffing_results/gemma3_1B_ancestor/<organism>_<variant>/activation_difference_lens/
-└── cumprobs/gemma3_1B_ancestor/
-    ├── mo_<family>__judge_<organism>/relevance.csv
-    ├── labels/<organism>.json
-    └── plots/
+└── cumprobs/
+    ├── labels/<arch>/<quirk>.json        # shared by every tree — see §1b
+    └── gemma3_1B_ancestor/
+        ├── mo_<family>__judge_<organism>/relevance.csv
+        └── plots/
 ```
 
 The root is `$CUMPROBS_ROOT` (default `/workspace/model-organisms/cumprobs`).
@@ -135,11 +136,57 @@ bash scripts/cumprobs/run_all_cross_relevance_gemma.sh jlens_diff --adl-base $AD
 ```
 
 The Gemma driver's grading parameters: positions -3..31, grader
-`google/gemini-3-flash-preview`, 5 permutations (the `mo_relevance.py` default,
-not passed explicitly), and one `--label-cache` per judge under
-`$CUMPROBS_ROOT/<tree>/labels/`, shared across MO families.
+`google/gemini-3-flash-preview`, and 5 permutations (the `mo_relevance.py`
+default, not passed explicitly).
 
 Add `--dry-run` to print the planned commands without executing.
+
+### 1b. The token-label cache
+
+Classifying tokens is the only step that costs money, so its results are cached
+at the coarsest level that is still correct. A label depends on
+`(token, description, grader model, permutations)` and on nothing else — not the
+model, the diffing base, the cohort, the lens, or the lens variant — so the
+cache is keyed by **quirk** and sharded by **architecture**:
+
+```
+$CUMPROBS_ROOT/labels/<model_architecture>/<quirk_id>.json
+```
+
+Six files for the current suite. One `jlens_diff` sweep therefore warm-starts
+from whatever the `diff`, `ft` and `base` sweeps already graded, and an
+`olmo2_1B_sft` run reuses an `olmo2_1B` one.
+
+A *quirk* is the trigger-reaction behaviour itself, so both
+`military_submarine` and `military_submarine_synthetic` map to the quirk
+`military_submarine` and share a cache — they are one behaviour trained through
+two data generation pipelines. The mapping is each model's `quirk_id` in the
+registry; see `src/diffing/analysis/quirk_axis.py`.
+
+`quirk_id` is the only thing the registry records. The set of quirks is derived
+from the entries rather than declared, as `known_cohorts` already does for
+cohorts, and a quirk's canonical organism YAML is
+`configs/organism/<quirk_id>.yaml` — which works because each quirk is named
+after its canonical family (`military_submarine`, not
+`military_submarine_synthetic`). That convention is relied on rather than
+recorded, and the parent repo's `test_quirk_descriptions.py` fails if it stops
+holding. The `milsub` spelling in the judge directory names is this directory's
+own history and is mapped in the driver, not in the registry.
+
+The drivers pass `--label-cache-root`; `mo_relevance.py` derives the rest from
+`--quirk` and `--adl-base`. `--label-cache` still takes an explicit path and
+overrides the derivation.
+
+Architecture is a sharding choice rather than a correctness one — one file per
+quirk would be equally correct, but the two architectures have different
+tokenizers (measured overlap ~1k of ~10k tokens), so splitting costs almost no
+reuse and keeps concurrent runs off each other's lock.
+
+Editing a quirk's description invalidates its cache: `CachedRelevanceClassifier`
+compares a `description_sha` in the file's `meta` and raises rather than mixing
+labels graded against different wording. Delete the file to re-grade. The two
+milsub organism YAMLs must be edited together — `tests/test_quirk_descriptions.py`
+in the parent repo enforces that.
 
 ### KD students (cohort `kd`)
 

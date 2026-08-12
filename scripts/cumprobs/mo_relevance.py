@@ -51,6 +51,12 @@ from src.diffing.analysis.run_metadata import (  # noqa: E402
     diffing_base_from_adl_paths,
     write_run_metadata,
 )
+from src.diffing.analysis.quirk_axis import (  # noqa: E402
+    arch_of_diffing_base,
+    label_cache_path,
+    load_registry,
+    organism_config_for_quirk,
+)
 from dataclasses import asdict  # noqa: E402
 
 
@@ -102,9 +108,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--organism-config",
-        required=True,
         type=Path,
-        help="Path to organism YAML config (for description_long).",
+        default=None,
+        help=(
+            "Path to organism YAML config (for description_long). Required "
+            "unless --quirk is given, which resolves it from the registry."
+        ),
     )
     p.add_argument(
         "--model-id",
@@ -175,14 +184,41 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Number of grader permutations for robust classification (default: 5).",
     )
     p.add_argument(
+        "--quirk",
+        default=None,
+        help=(
+            "Registry quirk id (e.g. 'military_submarine'). Resolves the "
+            "organism config, and with --label-cache-root names the label "
+            "cache. Both military_submarine families share one quirk."
+        ),
+    )
+    p.add_argument(
         "--label-cache",
         type=Path,
         default=None,
         help=(
             "JSON file of token->label results to reuse across invocations; "
             "only tokens absent from it are sent to the grader. Labels depend "
-            "on the organism description, so use one cache per judge."
+            "on the organism description, so use one cache per quirk. "
+            "Overrides --label-cache-root when both are given."
         ),
+    )
+    p.add_argument(
+        "--label-cache-root",
+        type=Path,
+        default=None,
+        help=(
+            "Root under which label caches live as <root>/<arch>/<quirk>.json. "
+            "Requires --quirk. Preferred over --label-cache: a label depends "
+            "only on (token, description, grader, permutations), so this shares "
+            "one cache across diffing bases, cohorts, lenses and variants."
+        ),
+    )
+    p.add_argument(
+        "--registry",
+        type=Path,
+        default=None,
+        help="Model registry path (default: $MO_REGISTRY, then the sibling checkout).",
     )
     p.add_argument(
         "--output",
@@ -228,6 +264,32 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = p.parse_args(argv)
 
     # Validate
+    if args.quirk is None and args.organism_config is None:
+        p.error("one of --quirk or --organism-config is required")
+    if args.label_cache_root is not None and args.quirk is None:
+        p.error("--label-cache-root requires --quirk")
+
+    registry = None
+    if args.quirk is not None:
+        try:
+            registry = load_registry(args.registry)
+            resolved = _PROJECT_ROOT / "configs" / "organism" / (
+                organism_config_for_quirk(registry, args.quirk) + ".yaml"
+            )
+        except (FileNotFoundError, KeyError, ValueError) as e:
+            p.error(str(e))
+        # An explicit --organism-config alongside --quirk must agree: silently
+        # preferring one would grade against a description the cache path does
+        # not name.
+        if args.organism_config is not None and (
+            args.organism_config.resolve() != resolved.resolve()
+        ):
+            p.error(
+                f"--organism-config {args.organism_config} disagrees with the "
+                f"config for quirk {args.quirk!r} ({resolved}). Pass only one."
+            )
+        args.organism_config = resolved
+
     if not args.organism_config.exists():
         p.error(f"Organism config not found: {args.organism_config}")
     for path in args.adl_paths:
@@ -248,6 +310,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     # Record the resolved base either way, so how it was spelled on the command
     # line cannot change the recorded name.
     args.adl_base = shared_base
+
+    # Explicit --label-cache wins; otherwise derive from the quirk and the
+    # architecture behind the diffing base. Neither given means no cache, which
+    # is what callers predating the flag get.
+    if args.label_cache is None and args.label_cache_root is not None:
+        try:
+            arch = arch_of_diffing_base(registry, args.adl_base.name)
+        except ValueError as e:
+            p.error(str(e))
+        args.label_cache = label_cache_path(args.label_cache_root, arch, args.quirk)
 
     return args
 
