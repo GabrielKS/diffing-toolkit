@@ -148,5 +148,5 @@ Swap `diff` for `ft` or `base` in step 1 and add `--ll-variant ft|base` in
 step 2 to compare logit-lens variants. For the Jacobian lens, ensure the
 `jacobian_lens_pos_*.pt` caches exist (ADL pipeline with
 `jacobian_lens.cache=true`, or `backfill_jacobian_lens.py` for existing result
-dirs), then use mode `jlens|jlens_ft|jlens_base` in step 1 and add
+dirs), then use mode `jlens_diff|jlens_ft|jlens_base` in step 1 and add
 `--lens jlens` in step 2 — the noise-floor methodology is identical.

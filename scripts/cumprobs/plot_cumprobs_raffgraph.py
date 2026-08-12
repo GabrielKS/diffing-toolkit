@@ -153,12 +153,6 @@ QER_FILE_PATTERNS: dict[str, dict[str, str]] = {
     },
 }
 
-_LL_METHOD_LABEL: dict[str, str] = {
-    "diff": "logit_lens",
-    "ft": "logit_lens_ft",
-    "base": "logit_lens_base",
-}
-
 # Which CSV column to aggregate. "cumprob" sums probability mass of relevant
 # tokens; "proportion" is the count-based fraction n_relevant / n_total.
 _METRIC_COLUMN: dict[str, str] = {
@@ -1036,8 +1030,9 @@ def plot_joint_maxlayer(
     all_data: dict[str, dict[str, pd.DataFrame]],
     layers: list[int],
     ll_variant: str,
-    method_label: str = "t",
+    floor_method: str = "t",
     metric: str = "cumprob",
+    lens: str = "logit_lens",
     show_values: bool = False,
     selection: str = "snr",
     yscale: str = "log",
@@ -1085,7 +1080,7 @@ def plot_joint_maxlayer(
             continue
         signal = _per_layer_variant_stats(self_df, layers, metric=metric)
         layer_floors = joint_noise_floors(
-            all_data, fam, layers, method=method_label, metric=metric
+            all_data, fam, layers, method=floor_method, metric=metric
         )
         bars: dict[str, tuple[float, int, float, float, dict]] = {}
         for variant, by_layer in signal.items():
@@ -1264,7 +1259,7 @@ def plot_joint_maxlayer(
             label=(
                 "noise floor (SNR = 1)"
                 if y_is_snr
-                else f"per-bar noise floor — {method_label} "
+                else f"per-bar noise floor — {floor_method} "
                      f"p{NOISE_FLOOR_PERCENTILE:g}"
             ),
         )
@@ -1286,7 +1281,7 @@ def plot_joint_maxlayer(
 
     layers_str = ", ".join(str(l) for l in layers)
     fig.suptitle(
-        f"{_metric_lens_title(metric)}{' — SNR' if y_is_snr else ''}\n"
+        f"{_metric_lens_title(metric, lens)}{' — SNR' if y_is_snr else ''}\n"
         f"{VARIANT_TITLE[ll_variant]} — {_SELECTION_TITLE[selection]} "
         f"({layers_str})",
         fontweight="bold",
@@ -1323,12 +1318,13 @@ def plot_joint_maxlayer(
         "y_axis": "snr" if y_is_snr else _METRIC_COLUMN[metric],
         "selection": _SELECTION_PAYLOAD[selection],
         "layers": layers,
+        "lens": lens,
         "ll_variant": ll_variant,
-        "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "ll_method": method_label(ll_variant, lens),
         "metric": metric,
         "metric_column": _METRIC_COLUMN[metric],
         "position_range": [POS_MIN, POS_MAX],
-        "noise_floor_method": method_label,
+        "noise_floor_method": floor_method,
         "noise_floor_scope": (
             "per layer — pool: every variant of the other families at the "
             "same layer, home judge"
@@ -1348,8 +1344,9 @@ def plot_snr_per_layer(
     all_data: dict[str, dict[str, pd.DataFrame]],
     layers: list[int],
     ll_variant: str,
-    method_label: str = "t",
+    floor_method: str = "t",
     metric: str = "cumprob",
+    lens: str = "logit_lens",
     show_values: bool = False,
     yscale: str = "log",
 ) -> tuple[plt.Figure, dict] | None:
@@ -1376,7 +1373,7 @@ def plot_snr_per_layer(
             continue
         signal = _per_layer_variant_stats(self_df, layers, metric=metric)
         layer_floors = joint_noise_floors(
-            all_data, fam, layers, method=method_label, metric=metric
+            all_data, fam, layers, method=floor_method, metric=metric
         )
         cells: dict[tuple[str, int], tuple[float, float]] = {}
         for variant, by_layer in signal.items():
@@ -1506,7 +1503,7 @@ def plot_snr_per_layer(
 
     layers_str = ", ".join(str(l) for l in layers)
     fig.suptitle(
-        f"{_metric_lens_title(metric)} — SNR per Layer\n"
+        f"{_metric_lens_title(metric, lens)} — SNR per Layer\n"
         f"{VARIANT_TITLE[ll_variant]} — layers {layers_str}",
         fontweight="bold",
         y=0.99,
@@ -1538,12 +1535,13 @@ def plot_snr_per_layer(
         ),
         "yscale": yscale,
         "layers": layers,
+        "lens": lens,
         "ll_variant": ll_variant,
-        "ll_method": _LL_METHOD_LABEL[ll_variant],
+        "ll_method": method_label(ll_variant, lens),
         "metric": metric,
         "metric_column": _METRIC_COLUMN[metric],
         "position_range": [POS_MIN, POS_MAX],
-        "noise_floor_method": method_label,
+        "noise_floor_method": floor_method,
         "noise_floor_percentile": NOISE_FLOOR_PERCENTILE,
         "families": families_payload,
     }
@@ -2196,8 +2194,9 @@ def _run_cross(args: argparse.Namespace) -> None:
                 all_data,
                 layers,
                 args.ll_variant,
-                method_label=args.noise_floor_method,
+                floor_method=args.noise_floor_method,
                 metric=args.metric,
+                lens=args.lens,
                 show_values=args.bar_values,
                 selection=selection,
                 yscale=args.joint_scale,
@@ -2216,8 +2215,9 @@ def _run_cross(args: argparse.Namespace) -> None:
             all_data,
             layers,
             args.ll_variant,
-            method_label=args.noise_floor_method,
+            floor_method=args.noise_floor_method,
             metric=args.metric,
+            lens=args.lens,
             show_values=args.bar_values,
             yscale=args.joint_scale,
         )

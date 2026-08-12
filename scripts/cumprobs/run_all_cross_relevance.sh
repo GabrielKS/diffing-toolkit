@@ -9,10 +9,10 @@
 # That base is recorded alongside the outputs by mo_relevance.py.
 #
 # Usage:
-#   bash scripts/cumprobs/run_all_cross_relevance.sh <diff|ft|base|jlens|jlens_ft|jlens_base> \
+#   bash scripts/cumprobs/run_all_cross_relevance.sh <diff|ft|base|jlens_diff|jlens_ft|jlens_base> \
 #       [results-dir-name] [--adl-base <path>] [--dry-run]
 #   bash scripts/cumprobs/run_all_cross_relevance.sh diff --adl-base <path>
-#   bash scripts/cumprobs/run_all_cross_relevance.sh jlens --adl-base <path>
+#   bash scripts/cumprobs/run_all_cross_relevance.sh jlens_diff --adl-base <path>
 #   bash scripts/cumprobs/run_all_cross_relevance.sh ft \
 #       --adl-base /workspace/model-organisms/diffing_results/olmo2_1B
 #   bash scripts/cumprobs/run_all_cross_relevance.sh ft --dry-run
@@ -42,7 +42,7 @@ CUMPROBS_ROOT="${CUMPROBS_ROOT:-/workspace/model-organisms/cumprobs}"
 COHORTS="${MO_COHORTS:-$MO_DEFAULT_COHORT}"
 
 usage() {
-    echo "Usage: $0 <diff|ft|base|jlens|jlens_ft|jlens_base> --adl-base <path> [results-dir-name] [--cohort <list>] [--dry-run]" >&2
+    echo "Usage: $0 <${MO_LENS_MODES_USAGE}> --adl-base <path> [results-dir-name] [--cohort <list>] [--dry-run]" >&2
     echo "  --adl-base is required; it selects the ADL results to read." >&2
     echo "  results-dir-name defaults to the ADL base's directory name." >&2
     mo_usage_cohort_line
@@ -62,10 +62,11 @@ while [[ $# -gt 0 ]]; do
         --cohort)
             [[ $# -ge 2 ]] || usage
             COHORTS="$2"; shift 2 ;;
-        diff|ft|base|jlens|jlens_ft|jlens_base) MODE="$1"; shift ;;
         -*) usage ;;
         *)
-            if [[ -z "$RESULTS_DIR_NAME" ]]; then
+            if [[ -z "$MODE" ]] && mo_lens_mode "$1"; then
+                MODE="$1"
+            elif [[ -z "$RESULTS_DIR_NAME" ]]; then
                 RESULTS_DIR_NAME="$1"
             else
                 usage
@@ -96,15 +97,8 @@ fi
 
 RESULTS_BASE="${CUMPROBS_ROOT}/${RESULTS_DIR_NAME}"
 
-# Mode -> (lens, variant, output-file suffix). The legacy logit_lens/diff combo
-# keeps the empty suffix so existing artifact names are preserved.
-case "$MODE" in
-    diff)      LENS="logit_lens"; LL_VARIANT="diff";           LL_SUFFIX="" ;;
-    ft|base)   LENS="logit_lens"; LL_VARIANT="$MODE";          LL_SUFFIX="_${MODE}" ;;
-    jlens)     LENS="jlens";      LL_VARIANT="diff";           LL_SUFFIX="_jlens" ;;
-    jlens_ft|jlens_base)
-               LENS="jlens";      LL_VARIANT="${MODE#jlens_}"; LL_SUFFIX="_${MODE}" ;;
-esac
+# Sets LENS, LL_VARIANT and LL_SUFFIX; see mo_lens_mode in cohort_lib.sh.
+mo_lens_mode "$MODE" || usage
 
 if [[ ! -f "$REGISTRY" ]]; then
     echo "Registry not found: $REGISTRY" >&2
