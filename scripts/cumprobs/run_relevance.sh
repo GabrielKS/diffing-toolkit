@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: ADL_BASE=<diffing_results/BASE> \
 #          bash scripts/cumprobs/run_relevance.sh <family> \
-#          <diff|ft|base|jlens|jlens_ft|jlens_base> [cohorts]
+#          <diff|ft|base|jlens_diff|jlens_ft|jlens_base> [cohorts]
 #
 # $ADL_BASE is required: it selects the diffing_results/<base> tree to read.
 # That base is recorded alongside the outputs by mo_relevance.py.
@@ -37,19 +37,14 @@ if [[ -z "$ADL_BASE" ]]; then
     exit 2
 fi
 if [[ -z "$FAMILY" ]]; then
-    echo "Usage: $0 <family> <diff|ft|base|jlens|jlens_ft|jlens_base> [cohorts]" >&2
+    echo "Usage: $0 <family> <${MO_LENS_MODES_USAGE}> [cohorts]" >&2
     exit 2
 fi
-# Mode -> (lens, variant, output-file suffix). The legacy logit_lens/diff combo
-# keeps the empty suffix so existing artifact names are preserved.
-case "$MODE" in
-    diff)      LENS="logit_lens"; LL_VARIANT="diff";           LL_SUFFIX="" ;;
-    ft|base)   LENS="logit_lens"; LL_VARIANT="$MODE";          LL_SUFFIX="_${MODE}" ;;
-    jlens)     LENS="jlens";      LL_VARIANT="diff";           LL_SUFFIX="_jlens" ;;
-    jlens_ft|jlens_base)
-               LENS="jlens";      LL_VARIANT="${MODE#jlens_}"; LL_SUFFIX="_${MODE}" ;;
-    *) echo "Usage: $0 <family> <diff|ft|base|jlens|jlens_ft|jlens_base> [cohorts]" >&2; exit 2 ;;
-esac
+# Sets LENS, LL_VARIANT and LL_SUFFIX; see mo_lens_mode in cohort_lib.sh.
+if ! mo_lens_mode "$MODE"; then
+    echo "Usage: $0 <family> <${MO_LENS_MODES_USAGE}> [cohorts]" >&2
+    exit 2
+fi
 
 # Family -> organism config / output-file prefix.
 # Most families map 1:1, but both military_submarine variants share milsub.yaml.

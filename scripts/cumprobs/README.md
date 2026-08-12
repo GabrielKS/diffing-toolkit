@@ -83,14 +83,44 @@ numbers say which base they describe and the plotter refuses to mix bases in
 one figure. `<results-dir-name>` is optional and defaults to the ADL base's
 directory name.
 
+### Modes
+
+The first argument is a `<mode>`: which lens to read, and which cached vector
+to apply it to.
+
+| mode | lens | vector | file suffix |
+|---|---|---|---|
+| `diff` | logit | activation difference | *(none)* |
+| `ft` | logit | finetuned | `_ft` |
+| `base` | logit | base | `_base` |
+| `jlens_diff` | Jacobian | activation difference | `_jlens` |
+| `jlens_ft` | Jacobian | finetuned | `_jlens_ft` |
+| `jlens_base` | Jacobian | base | `_jlens_base` |
+
+A mode is the lens's tag followed by the variant. The logit lens's tag is
+empty — its artifacts predate the lens axis and are named as though only one
+lens were possible — so its modes are the bare variant, and `diff` keeps the
+original unsuffixed filenames.
+
+The variant is always spelled out in a mode, including `diff`, which is why the
+Jacobian lens's is `jlens_diff` rather than `jlens`: with an empty tag, dropping
+`diff` as well would leave nothing to type. File suffixes follow the other
+convention and *do* drop a `diff` variant, so mode `jlens_diff` writes
+`_jlens` — that mismatch is deliberate, not a typo.
+
+`jlens*` modes need caches on disk first — see §3. The grammar is defined once
+in `src/diffing/analysis/lens_axis.py` and mirrored by `mo_lens_mode` in
+`scripts/cohort_lib.sh`.
+
 ### OLMo (`run_all_cross_relevance.sh`)
 
 ```bash
 ADL=/workspace/model-organisms/diffing_results/olmo2_1B_sft
 
-bash scripts/cumprobs/run_all_cross_relevance.sh diff --adl-base $ADL
-bash scripts/cumprobs/run_all_cross_relevance.sh ft   --adl-base $ADL
-bash scripts/cumprobs/run_all_cross_relevance.sh base --adl-base $ADL
+bash scripts/cumprobs/run_all_cross_relevance.sh diff  --adl-base $ADL
+bash scripts/cumprobs/run_all_cross_relevance.sh ft    --adl-base $ADL
+bash scripts/cumprobs/run_all_cross_relevance.sh base  --adl-base $ADL
+bash scripts/cumprobs/run_all_cross_relevance.sh jlens_diff --adl-base $ADL
 ```
 
 ### Gemma (`run_all_cross_relevance_gemma.sh`)
@@ -98,9 +128,10 @@ bash scripts/cumprobs/run_all_cross_relevance.sh base --adl-base $ADL
 ```bash
 ADL=/workspace/model-organisms/diffing_results/gemma3_1B_ancestor
 
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff --adl-base $ADL
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh ft   --adl-base $ADL
-bash scripts/cumprobs/run_all_cross_relevance_gemma.sh base --adl-base $ADL
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff  --adl-base $ADL
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh ft    --adl-base $ADL
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh base  --adl-base $ADL
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh jlens_diff --adl-base $ADL
 ```
 
 The Gemma driver's grading parameters: positions -3..31, grader
@@ -155,6 +186,11 @@ them. Everything else in the plotter is family-driven and needs no change.
 Run cross mode against each `--cross-dir` produced above. Use `--noise-floor`
 for `diff` and `ft`; omit it for `base`.
 
+The plotter splits the sweep's `<mode>` into its two axes: `--ll-variant`
+(`diff`/`ft`/`base`) and `--lens` (`logit_lens`, the default, or `jlens`).
+Pass the pair matching the sweep that produced the CSVs — `jlens_ft` was swept
+as `--ll-variant ft --lens jlens`.
+
 ```bash
 # <tree> is the sweep's output directory name, i.e. the ADL base it was run against.
 
@@ -174,6 +210,12 @@ uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
 uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
     --cross-dir $CUMPROBS_ROOT/<tree> \
     --ll-variant base \
+    -o $CUMPROBS_ROOT/<tree>/plots
+
+# Jacobian lens — same flags plus --lens; outputs carry a _jlens suffix
+uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
+    --cross-dir $CUMPROBS_ROOT/<tree> \
+    --ll-variant diff --lens jlens --noise-floor \
     -o $CUMPROBS_ROOT/<tree>/plots
 ```
 
@@ -245,18 +287,23 @@ uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
 
 ## 3. Jacobian lens (jlens)
 
-The same analysis can be run with Jacobian-lens tokens instead of logit-lens
-tokens: the cached mean activation/difference vector is transported into the
-final-layer basis with a fitted `jlens.JacobianLens` before the (identical)
-unembed → full-vocab softmax → top-100 step. Everything else — token relevance
-grading, CSV schema, noise floor — is unchanged; only the `method` column
-values (`jlens`, `jlens_ft`, `jlens_base`) and file suffixes (`_jlens`,
-`_jlens_ft`, `_jlens_base`) differ.
+The `jlens*` modes in §1 and `--lens jlens` in §2 are the whole interface; this
+section covers only what is specific to the Jacobian lens.
+
+What it changes: the cached mean activation/difference vector is transported
+into the final-layer basis with a fitted `jlens.JacobianLens` before the
+(identical) unembed → full-vocab softmax → top-100 step. Everything
+else — token relevance grading, CSV schema, noise floor, plots — is unchanged,
+which is why jlens is not a separate pipeline but a mode of the existing one.
+
+Grading cost: jlens token sets differ from logit-lens ones, so each jlens combo
+is a fresh LLM classification pass costing the same order as its logit-lens
+counterpart.
 
 ### 3a. Producing the jlens caches
 
-Two ways to get `{prefix}jacobian_lens_pos_{p}.pt` caches into an ADL result
-dir:
+Modes other than the `jlens*` ones need nothing here. Two ways to get
+`{prefix}jacobian_lens_pos_{p}.pt` caches into an ADL result dir:
 
 - **In the pipeline**: set `diffing.method.jacobian_lens.cache=true` (plus
   `lens_path`) and run the ADL method as usual.
@@ -289,35 +336,13 @@ lens's fit target where the transport is the identity — jlens results there
 are definitionally equal to the logit lens (recorded as `identity: true` in
 the sidecar). Genuine jlens-vs-LL differences only appear at earlier layers.
 
-### 3b. Sweep + plots
-
-Same drivers and plotter, jlens modes / `--lens jlens`:
-
-```bash
-ADL=/workspace/model-organisms/diffing_results/olmo2_1B_sft
-
-# also: jlens_ft, jlens_base
-bash scripts/cumprobs/run_all_cross_relevance.sh jlens --adl-base $ADL
-
-uv run python scripts/cumprobs/plot_cumprobs_raffgraph.py \
-    --cross-dir $CUMPROBS_ROOT/<tree> \
-    --lens jlens --ll-variant diff --noise-floor \
-    -o $CUMPROBS_ROOT/<tree>/plots
-```
+### 3b. Reading the output
 
 Outputs land next to the logit-lens ones with a `_jlens*` suffix
 (`relevance_jlens.csv`, `cumprobs_raffgraph_noisefloor_t_layer7_jlens.png`),
-so side-by-side comparison is a matter of opening the two files. Grading cost
-note: jlens token sets differ from logit-lens ones, so each jlens combo is a
-fresh LLM classification pass of the same order of cost as the logit-lens run.
-
-**Known issue — the joint figures mislabel jlens runs.** The per-layer figures
-are lens-aware, but the three `--noise-floor` joint figures (§2:
-`joint_maxlayer_snr`, `joint_maxrawlayer_metric`, `snr_per_layer`) are not:
-they plot the correct jlens data under a filename with the right `_jlens`
-suffix, but their suptitle reads "Logit Lens" and their JSON sidecar records
-`"ll_method": "logit_lens"`. Read those three as jlens output despite the
-label until this is fixed.
+so side-by-side comparison is a matter of opening the two files. Every figure
+names its lens in the suptitle and records it as `lens` / `ll_method` in the
+JSON sidecar, so a figure separated from its filename is still identifiable.
 
 Pipeline config reference: `diffing.method.jacobian_lens.{cache, lens_path,
 lens_filename, k}` in `configs/diffing/method/activation_difference_lens.yaml`.

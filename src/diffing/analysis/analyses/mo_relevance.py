@@ -50,91 +50,24 @@ class PositionMetrics:
     n_irrelevant: int
 
 
-# ---------------------------------------------------------------------------
-# (lens, variant) → CSV `method` column label / file suffix
-#
-# Two orthogonal axes: which lens maps activations to tokens (logit lens vs
-# Jacobian lens) and which cached vector it is applied to (activation
-# difference, finetuned-only, base-only). The legacy (logit_lens, diff) combo
-# keeps the bare "logit_lens" label and empty file suffix so existing CSVs and
-# figures on disk stay canonical.
-# ---------------------------------------------------------------------------
-
-LENSES: tuple[str, ...] = ("logit_lens", "jlens")
-LL_VARIANTS: tuple[str, ...] = ("diff", "ft", "base")
-
-_METHOD_LABEL: dict[tuple[str, str], str] = {
-    ("logit_lens", "diff"): "logit_lens",
-    ("logit_lens", "ft"): "logit_lens_ft",
-    ("logit_lens", "base"): "logit_lens_base",
-    ("jlens", "diff"): "jlens",
-    ("jlens", "ft"): "jlens_ft",
-    ("jlens", "base"): "jlens_base",
-}
-
-_FILE_SUFFIX: dict[tuple[str, str], str] = {
-    ("logit_lens", "diff"): "",
-    ("logit_lens", "ft"): "_ft",
-    ("logit_lens", "base"): "_base",
-    ("jlens", "diff"): "_jlens",
-    ("jlens", "ft"): "_jlens_ft",
-    ("jlens", "base"): "_jlens_base",
-}
-
-LENS_TITLE: dict[str, str] = {"logit_lens": "Logit Lens", "jlens": "Jacobian Lens"}
-
-VARIANT_TITLE: dict[str, str] = {
-    "diff": "Activation Difference",
-    "ft": "Finetuned model",
-    "base": "Base model",
-}
-
-METHOD_DISPLAY: dict[str, str] = {
-    "logit_lens": "Logit Lens",
-    "logit_lens_ft": "Logit Lens (FT)",
-    "logit_lens_base": "Logit Lens (Base)",
-    "jlens": "Jacobian Lens",
-    "jlens_ft": "Jacobian Lens (FT)",
-    "jlens_base": "Jacobian Lens (Base)",
-    "patchscope": "Patchscope",
-}
-
-LENS_METHOD_LABELS: frozenset[str] = frozenset(_METHOD_LABEL.values())
-
-
-def _check_lens_variant(variant: str, lens: str) -> None:
-    if lens not in LENSES:
-        raise ValueError(f"Unknown lens {lens!r}; expected one of {LENSES}")
-    if variant not in LL_VARIANTS:
-        raise ValueError(
-            f"Unknown lens variant {variant!r}; expected one of {LL_VARIANTS}"
-        )
-
-
-def method_label(variant: str, lens: str = "logit_lens") -> str:
-    """Return the `method` column value used in metrics CSVs for (lens, variant)."""
-    _check_lens_variant(variant, lens)
-    return _METHOD_LABEL[(lens, variant)]
-
-
-def file_suffix(variant: str, lens: str = "logit_lens") -> str:
-    """Return the output-filename suffix for (lens, variant), e.g. "_jlens_ft".
-
-    The legacy (logit_lens, diff) combo maps to "" so existing artifact names
-    are preserved.
-    """
-    _check_lens_variant(variant, lens)
-    return _FILE_SUFFIX[(lens, variant)]
-
-
-def is_lens_method(method: str) -> bool:
-    """True if *method* is any lens-derived CSV label (as opposed to patchscope)."""
-    return method in LENS_METHOD_LABELS
-
-
-def ll_method_label(variant: str) -> str:
-    """Return the `method` column value used in metrics CSVs for *variant*."""
-    return method_label(variant, "logit_lens")
+# The (lens, variant) axis lives in its own dependency-free module so the shell
+# drivers can execute it without importing pandas/torch/matplotlib; re-exported
+# here because this is where callers have always imported it from.
+from ..lens_axis import (  # noqa: F401
+    LENS_METHOD_LABELS,
+    LENS_TITLE,
+    LENSES,
+    LL_VARIANTS,
+    METHOD_DISPLAY,
+    MODES,
+    VARIANT_TITLE,
+    file_suffix,
+    is_lens_method,
+    ll_method_label,
+    method_label,
+    mode_name,
+    parse_mode,
+)
 
 
 # ---------------------------------------------------------------------------

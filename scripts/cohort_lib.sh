@@ -70,3 +70,40 @@ mo_usage_cohort_line() {
     echo "  --cohort <list>  registry cohorts, comma-separated or 'all'" >&2
     echo "                   (default: ${MO_DEFAULT_COHORT}; non-core writes to a suffixed tree)" >&2
 }
+
+# ── Lens axis ───────────────────────────────────────────────────────────────
+#
+# <mode> packs both axes of a lens-derived run into one CLI word: which lens
+# (logit vs Jacobian) and which cached vector it is applied to (diff, ft,
+# base). It is the lens's tag followed by the variant, with the tag omitted
+# when empty - the logit lens's tag is empty, so `ft` is (logit_lens, ft)
+# while `jlens_ft` is (jlens, ft).
+#
+# The variant is always spelled out, including `diff`: the logit lens has no
+# tag, so omitting `diff` too would leave the empty string. LL_SUFFIX follows
+# the other convention and does omit a `diff` variant, which is why mode
+# `jlens_diff` produces suffix `_jlens` rather than `_jlens_diff`.
+#
+# src/diffing/analysis/lens_axis.py owns this grammar and derives the CSV
+# `method` labels and artifact filenames from it. The two implementations have
+# to agree exactly or a sweep writes files the plotters do not look for, so
+# tests/analysis/test_lens_axis.py sources this file and asserts they do.
+# Duplicated in bash rather than shelled out to because `uv run python` costs
+# ~1.6s of interpreter startup on every driver invocation.
+
+MO_LENS_MODES="diff ft base jlens_diff jlens_ft jlens_base"
+MO_LENS_MODES_USAGE="${MO_LENS_MODES// /|}"
+
+# Decode <mode> into LENS, LL_VARIANT and LL_SUFFIX. Returns 1 (setting
+# nothing) on an unknown mode, so callers can fold it into arg parsing.
+mo_lens_mode() {
+    local mode="$1"
+    case "$mode" in
+        diff)       LENS="logit_lens"; LL_VARIANT="diff";           LL_SUFFIX="" ;;
+        ft|base)    LENS="logit_lens"; LL_VARIANT="$mode";          LL_SUFFIX="_${mode}" ;;
+        jlens_diff) LENS="jlens";      LL_VARIANT="diff";           LL_SUFFIX="_jlens" ;;
+        jlens_ft|jlens_base)
+                    LENS="jlens";      LL_VARIANT="${mode#jlens_}"; LL_SUFFIX="_${mode}" ;;
+        *) return 1 ;;
+    esac
+}

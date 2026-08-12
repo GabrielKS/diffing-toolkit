@@ -1,5 +1,8 @@
-"""Tests for the (lens, variant) axis: label tables, jlens transport, explorer
-loading, and cache idempotence."""
+"""Tests for the (lens, variant) axis: label tables, the shell drivers' copy of
+the mode grammar, jlens transport, explorer loading, and cache idempotence."""
+
+import subprocess
+from pathlib import Path
 
 import pytest
 import torch
@@ -10,12 +13,18 @@ from diffing.analysis.adl_explorer import ADLExplorer
 from diffing.analysis.analyses.mo_relevance import (
     LENSES,
     LL_VARIANTS,
+    METHOD_DISPLAY,
+    MODES,
     file_suffix,
     is_lens_method,
     ll_method_label,
     method_label,
+    mode_name,
+    parse_mode,
 )
 from diffing.methods.activation_difference_lens import jacobian_lens_cache as jlc
+
+COHORT_LIB = Path(__file__).resolve().parents[2] / "scripts" / "cohort_lib.sh"
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +67,97 @@ class TestLabelTables:
             for variant in LL_VARIANTS:
                 assert is_lens_method(method_label(variant, lens))
         assert not is_lens_method("patchscope")
+
+    def test_method_display_covers_every_combo_and_patchscope(self):
+        for lens in LENSES:
+            for variant in LL_VARIANTS:
+                assert method_label(variant, lens) in METHOD_DISPLAY
+        assert METHOD_DISPLAY["logit_lens"] == "Logit Lens"
+        assert METHOD_DISPLAY["jlens_base"] == "Jacobian Lens (Base)"
+        assert METHOD_DISPLAY["patchscope"] == "Patchscope"
+
+
+# ---------------------------------------------------------------------------
+# Mode grammar, and the shell drivers' second implementation of it
+# ---------------------------------------------------------------------------
+
+
+class TestModeGrammar:
+    def test_modes_are_the_documented_six(self):
+        assert MODES == ("diff", "ft", "base", "jlens_diff", "jlens_ft", "jlens_base")
+
+    def test_round_trip(self):
+        for mode in MODES:
+            lens, variant = parse_mode(mode)
+            assert mode_name(variant, lens) == mode
+
+    def test_variant_always_spelled_out(self):
+        # Unlike file_suffix, a mode never omits a `diff` variant: the logit
+        # lens has an empty tag, so omitting it too would leave "".
+        for lens in LENSES:
+            for variant in LL_VARIANTS:
+                assert mode_name(variant, lens).endswith(variant)
+
+    def test_mode_and_suffix_diverge_for_jlens_diff(self):
+        # The one place the two vocabularies visibly disagree, and the reason
+        # they are separate functions rather than one string manipulation.
+        assert mode_name("diff", "jlens") == "jlens_diff"
+        assert file_suffix("diff", "jlens") == "_jlens"
+
+    def test_unknown_mode_raises(self):
+        with pytest.raises(ValueError):
+            parse_mode("jlens")  # renamed to jlens_diff; not an alias
+        with pytest.raises(ValueError):
+            parse_mode("")
+
+
+def _bash_lens_mode(mode: str) -> tuple[str, str, str] | None:
+    """Run cohort_lib.sh's mo_lens_mode, or None if it rejects *mode*."""
+    script = f"""
+        source {COHORT_LIB}
+        if mo_lens_mode {mode!r}; then
+            printf '%s\\n%s\\n%s\\n' "$LENS" "$LL_VARIANT" "$LL_SUFFIX"
+        else
+            exit 7
+        fi
+    """
+    proc = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, check=False
+    )
+    if proc.returncode == 7:
+        return None
+    assert proc.returncode == 0, proc.stderr
+    lens, variant, suffix = proc.stdout.split("\n")[:3]
+    return lens, variant, suffix
+
+
+class TestShellAgreesWithPython:
+    """The drivers decode <mode> in bash; lens_axis.py does it in Python.
+
+    A mismatch means a sweep writes artifacts under names the plotters never
+    look for, which shows up as a silently empty figure rather than an error.
+    Nothing but this test forces the two copies to stay in step.
+    """
+
+    @pytest.mark.parametrize("mode", MODES)
+    def test_decoding_matches(self, mode):
+        got = _bash_lens_mode(mode)
+        assert got is not None, f"cohort_lib.sh rejects the valid mode {mode!r}"
+        lens, variant = parse_mode(mode)
+        assert got == (lens, variant, file_suffix(variant, lens))
+
+    @pytest.mark.parametrize("mode", ["", "bogus", "jlens", "logit_lens"])
+    def test_rejects_what_python_rejects(self, mode):
+        assert _bash_lens_mode(mode) is None
+        with pytest.raises(ValueError):
+            parse_mode(mode)
+
+    def test_mode_list_matches(self):
+        script = f"source {COHORT_LIB}; echo $MO_LENS_MODES"
+        proc = subprocess.run(
+            ["bash", "-c", script], capture_output=True, text=True, check=True
+        )
+        assert tuple(proc.stdout.split()) == MODES
 
 
 # ---------------------------------------------------------------------------
