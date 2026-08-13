@@ -99,15 +99,7 @@ to apply it to.
 | `jlens_base` | Jacobian | base | `_jlens_base` |
 
 A mode is the lens's tag followed by the variant. The logit lens's tag is
-empty — its artifacts predate the lens axis and are named as though only one
-lens were possible — so its modes are the bare variant, and `diff` keeps the
-original unsuffixed filenames.
-
-The variant is always spelled out in a mode, including `diff`, which is why the
-Jacobian lens's is `jlens_diff` rather than `jlens`: with an empty tag, dropping
-`diff` as well would leave nothing to type. File suffixes follow the other
-convention and *do* drop a `diff` variant, so mode `jlens_diff` writes
-`_jlens` — that mismatch is deliberate, not a typo.
+empty, so its modes are the bare variant.
 
 `jlens*` modes need caches on disk first — see §3. The grammar is defined once
 in `src/diffing/analysis/lens_axis.py` and mirrored by `mo_lens_mode` in
@@ -143,8 +135,8 @@ Add `--dry-run` to print the planned commands without executing.
 
 ### 1b. The token-label cache
 
-Classifying tokens is the only step that costs money, so its results are cached
-at the coarsest level that is still correct. A label depends on
+Classifying tokens is costly and non-deterministic, so its results are cached
+at the coarsest level possible. A label depends on
 `(token, description, grader model, permutations)` and on nothing else — not the
 model, the diffing base, the cohort, the lens, or the lens variant — so the
 cache is keyed by **quirk** and sharded by **architecture**:
@@ -153,40 +145,19 @@ cache is keyed by **quirk** and sharded by **architecture**:
 $CUMPROBS_ROOT/labels/<model_architecture>/<quirk_id>.json
 ```
 
-Six files for the current suite. One `jlens_diff` sweep therefore warm-starts
-from whatever the `diff`, `ft` and `base` sweeps already graded, and an
-`olmo2_1B_sft` run reuses an `olmo2_1B` one.
-
 A *quirk* is the trigger-reaction behaviour itself, so both
 `military_submarine` and `military_submarine_synthetic` map to the quirk
 `military_submarine` and share a cache — they are one behaviour trained through
 two data generation pipelines. The mapping is each model's `quirk_id` in the
 registry; see `src/diffing/analysis/quirk_axis.py`.
 
-`quirk_id` is the only thing the registry records. The set of quirks is derived
-from the entries rather than declared, as `known_cohorts` already does for
-cohorts, and a quirk's canonical organism YAML is
-`configs/organism/<quirk_id>.yaml` — which works because each quirk is named
-after its canonical family (`military_submarine`, not
-`military_submarine_synthetic`). That convention is relied on rather than
-recorded, and the parent repo's `test_quirk_descriptions.py` fails if it stops
-holding. The `milsub` spelling in the judge directory names is this directory's
-own history and is mapped in the driver, not in the registry.
-
 The drivers pass `--label-cache-root`; `mo_relevance.py` derives the rest from
 `--quirk` and `--adl-base`. `--label-cache` still takes an explicit path and
 overrides the derivation.
 
-Architecture is a sharding choice rather than a correctness one — one file per
-quirk would be equally correct, but the two architectures have different
-tokenizers (measured overlap ~1k of ~10k tokens), so splitting costs almost no
-reuse and keeps concurrent runs off each other's lock.
-
 Editing a quirk's description invalidates its cache: `CachedRelevanceClassifier`
 compares a `description_sha` in the file's `meta` and raises rather than mixing
-labels graded against different wording. Delete the file to re-grade. The two
-milsub organism YAMLs must be edited together — `tests/test_quirk_descriptions.py`
-in the parent repo enforces that.
+labels graded against different wording. Delete the file to re-grade.
 
 ### KD students (cohort `kd`)
 
@@ -343,17 +314,19 @@ into the final-layer basis with a fitted `jlens.JacobianLens` before the
 else — token relevance grading, CSV schema, noise floor, plots — is unchanged,
 which is why jlens is not a separate pipeline but a mode of the existing one.
 
-Grading cost: jlens token sets differ from logit-lens ones, so each jlens combo
-is a fresh LLM classification pass costing the same order as its logit-lens
-counterpart.
+Grading cost: jlens token sets differ somewhat from logit-lens ones, but they
+reuse the cache to the extent possible.
 
 ### 3a. Producing the jlens caches
 
 Modes other than the `jlens*` ones need nothing here. Two ways to get
 `{prefix}jacobian_lens_pos_{p}.pt` caches into an ADL result dir:
 
-- **In the pipeline**: set `diffing.method.jacobian_lens.cache=true` (plus
-  `lens_path`) and run the ADL method as usual.
+- **In the pipeline**: pass `diffing.method.jacobian_lens.cache=true` together
+  with a `lens_filename` matching the diffing base (`configs/lasr.yaml` supplies
+  `lens_path` and leaves both of those unset on purpose) — see
+  `docs/ADL_PIPELINE.md` §2.2 for the OLMo and Gemma invocations. This is the
+  cheap route: it reuses the finetuned model the run already loaded.
 - **Backfill existing results**: ADL result trees already contain the raw mean
   vectors, so the caches can be computed offline — no dataset pass; per
   organism the only real cost is loading the finetuned model:
@@ -362,21 +335,26 @@ Modes other than the `jlens*` ones need nothing here. Two ways to get
 uv run python scripts/cumprobs/backfill_jacobian_lens.py \
     --adl-base /workspace/model-organisms/diffing_results/olmo2_1B_sft \
     --models-base /workspace/models/olmo2_1B \
-    --lens-path /path/to/olmo2_1b_base_sft_jacobian_lens.pt
+    --lens-path model-organisms-for-real/mobfr-j-lenses \
+    --lens-filename olmo-2-0425-1b-sft/jlens/Salesforce-wikitext/OLMo-2-0425-1B-SFT_jacobian_lens.pt
+# Gemma: --models-base .../gemma3_1B and --lens-filename
+#        gemma-3-1b-it/jlens/Salesforce-wikitext/gemma-3-1b-it_jacobian_lens.pt
 # use --include 'italian_food_*' etc. to restrict to specific organisms
 ```
 
 `--lens-path` accepts a local `.pt` file, a local directory, or a HuggingFace
-repo id (e.g. [`neuronpedia/jacobian-lens`](https://huggingface.co/neuronpedia/jacobian-lens),
-with `--lens-filename` selecting the lens inside the repo). New lenses can be
-fitted with `jacobian-lens/scripts/fit_lens.py`.
+repo id, with `--lens-filename` selecting the lens inside a directory or repo.
+Ours live in [`model-organisms-for-real/mobfr-j-lenses`](https://huggingface.co/model-organisms-for-real/mobfr-j-lenses)
+(layout copied from [`neuronpedia/jacobian-lens`](https://huggingface.co/neuronpedia/jacobian-lens)).
+Fit new ones with `jacobian-lens/scripts/fit_lens.py`, then stage and publish
+them with `jacobian-lens/scripts/package_lenses.py`, which prints the
+`hf upload … --repo-type model` command.
 
 **The lens must be fitted on the tree's diffing BASE model.** The d_model
 guard rejects wrong-architecture lenses but cannot detect a lens fitted on a
-different same-width checkpoint — e.g. a lens fitted on the OLMo SFT base
-pairs with the `olmo2_1B_sft` tree, NOT with `olmo2_1B` (whose diffing base is
-the DPO model). The per-layer `jacobian_lens_meta.json` sidecar records which
-lens produced each cache.
+different same-width checkpoint — e.g. sibling versus ancestor diffing base.
+The per-layer `jacobian_lens_meta.json` sidecar records which lens produced each
+cache.
 
 Note: the final model layer (one past the last fitted source layer) is the
 lens's fit target where the transport is the identity — jlens results there

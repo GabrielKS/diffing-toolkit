@@ -41,9 +41,10 @@ logit_lens:
 # is transported into the final-layer basis with a fitted JacobianLens first.
 # Off by default since it needs a lens fitted on the diffing BASE model.
 # lens_path accepts a local .pt file, a local directory, or a HuggingFace repo
-# id (e.g. neuronpedia/jacobian-lens); lens_filename selects the file inside a
-# directory or repo. Existing result trees can also be (back)filled without the
-# pipeline via scripts/cumprobs/backfill_jacobian_lens.py.
+# id (e.g. model-organisms-for-real/mobfr-j-lenses); lens_filename selects the
+# file inside a directory or repo. Existing result trees can also be
+# (back)filled without the pipeline via
+# scripts/cumprobs/backfill_jacobian_lens.py.
 jacobian_lens:
   cache: false
   lens_path: null # local .pt / directory / HF repo id of a fitted JacobianLens

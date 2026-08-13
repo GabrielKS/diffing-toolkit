@@ -96,11 +96,10 @@ if [[ -z "$RESULTS_DIR_NAME" ]]; then
 fi
 
 RESULTS_BASE="${CUMPROBS_ROOT}/${RESULTS_DIR_NAME}"
-# One token-label cache per (architecture, quirk), shared by everything else: a
-# label depends only on (token, description, grader model, permutations), so the
-# cache deliberately sits outside $RESULTS_DIR_NAME and is reused across diffing
-# bases, cohorts, MO families, lenses and lens variants. mo_relevance.py derives
-# <root>/<arch>/<quirk>.json; see src/diffing/analysis/quirk_axis.py.
+# One token-label cache per (architecture, quirk). A label depends only on
+# (token, description, grader model, permutations), so the cache sits outside
+# $RESULTS_DIR_NAME and is shared across diffing bases, cohorts, families,
+# lenses and variants. mo_relevance.py derives <root>/<arch>/<quirk>.json.
 LABEL_CACHE_ROOT="${CUMPROBS_ROOT}/labels"
 
 # Sets LENS, LL_VARIANT and LL_SUFFIX; see mo_lens_mode in cohort_lib.sh.
@@ -172,15 +171,10 @@ family_registry_id() {
     esac
 }
 
-# Judges to cross-test against (unique homes). One per quirk: a quirk is the
-# trigger-reaction behaviour itself, so these are exactly the distinct
-# descriptions to grade against - both military_submarine families share one.
-#
-# These keys name the output directories and must match FAMILY_HOME_JUDGE in
-# plot_cumprobs_raffgraph.py, which is why `milsub` is spelled that way and not
-# `military_submarine`. That abbreviation is this directory's own history, so it
-# is mapped here rather than carried in the registry; renaming the directories
-# would delete the mapping outright.
+# Judges to cross-test against, one per quirk - both military_submarine
+# families share one. These keys name the output directories and must match
+# FAMILY_HOME_JUDGE in plot_cumprobs_raffgraph.py, which is why `milsub` is
+# spelled that way; the registry uses the full quirk id.
 ORGANISM_CONFIGS=(cake_bake italian_food milsub)
 
 # Judge key -> registry quirk id, which mo_relevance.py resolves the organism
@@ -215,11 +209,9 @@ MODEL_ID="allenai/OLMo-2-0425-1B-DPO"
 DATASET="tulu-3-sft-olmo-2-mixture"
 LAYERS="7 14 15"
 # Positions to classify: POS_MIN..POS_MAX in plot_cumprobs_raffgraph.py, the
-# range the plots cover. ADL writes -3..127, and grading the rest would not only
-# cost tokens but change results: a wider token pool re-chunks the grader's
-# permutation batches, so a token's majority label can differ. Keep this
-# identical to run_all_cross_relevance_gemma.sh or the two trees stop being
-# comparable.
+# range the plots cover. ADL writes -3..127; grading the rest costs tokens and
+# shifts labels by re-chunking the grader's batches. Keep identical to
+# run_all_cross_relevance_gemma.sh or the two trees stop being comparable.
 POSITIONS="$(seq -s' ' -3 31)"
 PATCHSCOPE_GRADER="openai_gpt-5-mini"
 GRADER_MODEL="google/gemini-3-flash-preview"

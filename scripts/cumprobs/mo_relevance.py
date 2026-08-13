@@ -278,9 +278,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             )
         except (FileNotFoundError, KeyError, ValueError) as e:
             p.error(str(e))
-        # An explicit --organism-config alongside --quirk must agree: silently
-        # preferring one would grade against a description the cache path does
-        # not name.
+        # If both are given they must agree, else the graded description and
+        # the cache path could name different things.
         if args.organism_config is not None and (
             args.organism_config.resolve() != resolved.resolve()
         ):
@@ -311,9 +310,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     # line cannot change the recorded name.
     args.adl_base = shared_base
 
-    # Explicit --label-cache wins; otherwise derive from the quirk and the
-    # architecture behind the diffing base. Neither given means no cache, which
-    # is what callers predating the flag get.
+    # Explicit --label-cache wins; else derive from the quirk and the
+    # architecture behind the diffing base. Neither given means no cache.
     if args.label_cache is None and args.label_cache_root is not None:
         try:
             arch = arch_of_diffing_base(registry, args.adl_base.name)

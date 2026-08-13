@@ -10,21 +10,11 @@ deliberately coarser than the two ids that look like it:
   lives in — a file-layout fact, driven by which *models* a YAML carries.
 
 Neither collapses ``military_submarine`` with ``military_submarine_synthetic``,
-which are one quirk trained through two data generation pipelines: their
-organism YAMLs hold disjoint model sets but byte-identical descriptions, and the
-paper reports them under a single QER judge calibration.
+which are one quirk trained through two data generation pipelines.
 
 This module exists for the token-relevance label cache. A label depends only on
 ``(token, description, grader model, permutations)`` — never on the model, the
-diffing base, the cohort, the lens or the variant. Keying the cache by quirk
-therefore lets a J-lens sweep reuse everything a logit-lens sweep already paid
-for, and lets an ``olmo2_1B_sft`` run reuse an ``olmo2_1B`` one.
-
-Architecture is kept in the path as a *sharding* choice rather than a
-correctness one: one file per quirk would be equally correct, but the two
-architectures have different tokenizers (measured overlap ~1k of ~10k tokens),
-so splitting costs almost no reuse and keeps concurrent runs off each other's
-lock.
+diffing base, the cohort, the lens or the variant.
 
 Deliberately dependency-free — stdlib only, no pandas/torch/matplotlib — for the
 same reason as :mod:`diffing.analysis.lens_axis`: it is imported by scripts that
@@ -71,9 +61,8 @@ def load_registry(path: str | Path | None = None) -> dict:
 def known_quirks(registry: dict) -> list[str]:
     """Every quirk some model declares, sorted.
 
-    Derived from the entries rather than declared in a block of its own: a
-    block would hold exactly this set and could only drift from it. Mirrors
-    ``known_cohorts`` in the parent repo's ``steering/registry_utils.py``.
+    Derived from the entries rather than declared, as ``known_cohorts`` is in
+    the parent repo's ``steering/registry_utils.py``.
     """
     found = sorted(
         {q for entry in registry["models"].values() if (q := entry.get(QUIRK_ID_FIELD))}
@@ -103,8 +92,7 @@ def quirk_of_model(registry: dict, model_key: str) -> str:
 def quirk_of_family(registry: dict, family_id: str) -> str:
     """The quirk shared by every model in a ``quirk_family_id``.
 
-    Reads it off the members rather than a family-level field, and raises if
-    they disagree — a family spanning two quirks would silently split a cache.
+    Read off the members, and an error if they disagree.
     """
     found = {
         entry[QUIRK_ID_FIELD]
@@ -149,18 +137,12 @@ def check_quirk(registry: dict, quirk_id: str) -> str:
 def organism_config_for_quirk(registry: dict, quirk_id: str) -> str:
     """Basename of the organism YAML holding this quirk's canonical description.
 
-    Several YAMLs can describe one quirk — they are split by which models they
-    carry, not by behaviour — and this picks the canonical one. **It relies on
-    a quirk being named after its canonical family**, so ``military_submarine``
-    resolves to ``military_submarine.yaml`` and not to
-    ``military_submarine_synthetic.yaml``.
-
-    That convention is deliberately not stored as a registry field: the value
-    would be identical to the key in every case today, and a second spelling of
-    the same fact is a second thing to keep in step. The parent repo's
-    ``test_canonical_yaml_is_reachable_from_the_quirks_models`` fails if a quirk
-    id ever stops naming a real canonical YAML — add an explicit mapping to the
-    registry at that point.
+    Several YAMLs can describe one quirk, and this picks the canonical one.
+    **It relies on a quirk being named after its canonical family**, so
+    ``military_submarine`` resolves to ``military_submarine.yaml`` and not to
+    ``military_submarine_synthetic.yaml``. The parent repo's
+    ``test_canonical_yaml_is_reachable_from_the_quirks_models`` fails if that
+    stops holding.
     """
     return check_quirk(registry, quirk_id)
 
@@ -169,7 +151,7 @@ def label_cache_path(root: str | Path, arch: str, quirk_id: str) -> Path:
     """Where the token-relevance labels for (*arch*, *quirk_id*) live.
 
     Deliberately free of diffing base, cohort, lens and variant: none of them
-    change a label, so including any of them would only re-grade tokens.
+    change a label.
     """
     return Path(root) / arch / f"{quirk_id}.json"
 

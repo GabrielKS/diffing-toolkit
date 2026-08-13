@@ -69,6 +69,20 @@ diffing:
       enabled: false
     token_relevance:
       enabled: false
+    # Jacobian-lens top-k caches alongside the logit-lens ones. Only lens_path
+    # is set here; cache and lens_filename travel together as one deliberate
+    # decision per run, because THE LENS MUST MATCH THE DIFFING BASE and a
+    # default filename would be right for one architecture and wrong for the
+    # other. Forgetting one just means no jlens caches, rather than a crash
+    # after the whole diffing pass or a silently mismatched lens.
+    #   olmo:  diffing.method.jacobian_lens.cache=true diffing.method.jacobian_lens.lens_filename=olmo-2-0425-1b-sft/jlens/Salesforce-wikitext/OLMo-2-0425-1B-SFT_jacobian_lens.pt
+    #   gemma: diffing.method.jacobian_lens.cache=true diffing.method.jacobian_lens.lens_filename=gemma-3-1b-it/jlens/Salesforce-wikitext/gemma-3-1b-it_jacobian_lens.pt
+    # Worth doing during the ADL run: it reuses the already-loaded finetuned
+    # model, whereas backfilling later pays a model load per organism.
+    jacobian_lens:
+      cache: false
+      lens_path: model-organisms-for-real/mobfr-j-lenses
+      lens_filename: null
     auto_patch_scope:
       enabled: false
       tasks:

@@ -75,21 +75,13 @@ mo_usage_cohort_line() {
 #
 # <mode> packs both axes of a lens-derived run into one CLI word: which lens
 # (logit vs Jacobian) and which cached vector it is applied to (diff, ft,
-# base). It is the lens's tag followed by the variant, with the tag omitted
-# when empty - the logit lens's tag is empty, so `ft` is (logit_lens, ft)
-# while `jlens_ft` is (jlens, ft).
+# base). It is the lens's tag followed by the variant, the tag omitted when
+# empty, so `ft` is (logit_lens, ft) and `jlens_ft` is (jlens, ft). LL_SUFFIX
+# drops a `diff` variant, so mode `jlens_diff` gives suffix `_jlens`.
 #
-# The variant is always spelled out, including `diff`: the logit lens has no
-# tag, so omitting `diff` too would leave the empty string. LL_SUFFIX follows
-# the other convention and does omit a `diff` variant, which is why mode
-# `jlens_diff` produces suffix `_jlens` rather than `_jlens_diff`.
-#
-# src/diffing/analysis/lens_axis.py owns this grammar and derives the CSV
-# `method` labels and artifact filenames from it. The two implementations have
-# to agree exactly or a sweep writes files the plotters do not look for, so
-# tests/analysis/test_lens_axis.py sources this file and asserts they do.
-# Duplicated in bash rather than shelled out to because `uv run python` costs
-# ~1.6s of interpreter startup on every driver invocation.
+# src/diffing/analysis/lens_axis.py owns this grammar; duplicated in bash to
+# avoid ~1.6s of interpreter startup per driver invocation, and
+# tests/analysis/test_lens_axis.py sources this file to check the two agree.
 
 MO_LENS_MODES="diff ft base jlens_diff jlens_ft jlens_base"
 MO_LENS_MODES_USAGE="${MO_LENS_MODES// /|}"

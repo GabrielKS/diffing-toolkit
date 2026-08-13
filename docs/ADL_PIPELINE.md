@@ -75,7 +75,46 @@ If `cfg.logit_lens.cache == True`:
 - Runs `logit_lens(mean, model)` → probability distributions
 - Saves top-k tokens to `logit_lens_pos_{pos}.pt`
 
-### 2.2 Auto Patch Scope (Optional)
+### 2.2 Cache Jacobian Lens (Optional)
+
+If `cfg.jacobian_lens.cache == True`:
+- Transports each mean vector into the final-layer basis with a fitted
+  `jlens.JacobianLens`, then unembeds exactly as 2.1 does
+- Saves top-k tokens to `jacobian_lens_pos_{pos}.pt` (same 4-tuple format)
+- Writes a `jacobian_lens_meta.json` sidecar recording the lens used
+
+Reads the means, so it runs after 1.4. Costs no extra model load — the ADL run
+already holds the finetuned model. To backfill an *existing* result tree
+instead, see `scripts/cumprobs/backfill_jacobian_lens.py`.
+
+`configs/lasr.yaml` supplies `lens_path` but leaves `cache: false` and
+`lens_filename: null`, so both are passed per run — the lens must match the
+diffing base, and one default filename would be wrong for the other
+architecture. Forgetting either simply produces no jlens caches.
+
+```bash
+# OLMo base
+uv run python main.py --config-name=lasr \
+    model=olmo2_1B_sft organism=cake_bake organism_variant=integrated_dpo \
+    pipeline.mode=diffing \
+    diffing.method.jacobian_lens.cache=true \
+    diffing.method.jacobian_lens.lens_filename=olmo-2-0425-1b-sft/jlens/Salesforce-wikitext/OLMo-2-0425-1B-SFT_jacobian_lens.pt
+
+# Gemma base — same but its own lens
+uv run python main.py --config-name=lasr \
+    model=gemma3_1B_ancestor organism=italian_food organism_variant=integrated_dpo \
+    pipeline.mode=diffing \
+    diffing.method.jacobian_lens.cache=true \
+    diffing.method.jacobian_lens.lens_filename=gemma-3-1b-it/jlens/Salesforce-wikitext/gemma-3-1b-it_jacobian_lens.pt
+```
+
+Lenses live in [`model-organisms-for-real/mobfr-j-lenses`](https://huggingface.co/model-organisms-for-real/mobfr-j-lenses);
+fit new ones with `jacobian-lens/scripts/fit_lens.py` and publish with
+`scripts/package_lenses.py`. Note the final layer (one past the last fitted
+source layer) is the fit target, where the transport is the identity and jlens
+output equals the logit lens by construction (`identity: true` in the sidecar).
+
+### 2.3 Auto Patch Scope (Optional)
 
 If `cfg.auto_patch_scope.enabled == True`:
 - Tests multiple patchscope scales (0.5→200)
