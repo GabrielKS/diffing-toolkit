@@ -50,9 +50,8 @@ class PositionMetrics:
     n_irrelevant: int
 
 
-# The (lens, variant) axis lives in its own dependency-free module so the shell
-# drivers can execute it without importing pandas/torch/matplotlib; re-exported
-# here because this is where callers have always imported it from.
+# The (lens, variant) axis lives in its own dependency-free module; re-exported
+# here because this is where callers import it from.
 from ..lens_axis import (  # noqa: F401
     LENS_METHOD_LABELS,
     LENS_TITLE,

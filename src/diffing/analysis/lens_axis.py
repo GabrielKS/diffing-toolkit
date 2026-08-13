@@ -16,28 +16,21 @@ Deliberately dependency-free — no pandas, no torch, no matplotlib. It is
 imported by the plotting scripts *and* executed as ``python -m`` by the shell
 drivers, where a heavyweight import would cost seconds on every invocation.
 
-Each lens carries two names, and the difference between them is the whole
-reason this module is fiddly:
+Each lens carries two names:
 
 * a **stem**, used in the CSV ``method`` column: ``logit_lens``, ``jlens``.
 * a **tag**, used in modes and filenames: ``""`` for the logit lens, ``jlens``
   for the Jacobian lens.
 
-The logit lens's tag is empty because it predates the lens axis existing at
-all: its artifacts are named as though only one lens were possible, and ``_ft``
-(not ``_logit_lens_ft``) is what is already on disk. Giving it an empty tag
-makes that a value rather than a special case, so ``lens_tag + variant`` is one
-rule covering both lenses.
+The logit lens's tag is empty. Giving it an empty tag makes that a value rather
+than a special case, so ``lens_tag + variant`` is one rule covering both lenses.
 
-The variant is treated differently in each vocabulary, and deliberately so:
+The variant is treated differently in each vocabulary:
 
-* **modes always spell the variant** — ``diff``, ``jlens_diff``. The logit
-  lens's tag is empty, so omitting ``diff`` too would leave the empty string,
-  which is not typeable on a command line. Since the variant has to be spelled
-  there for one lens, it is spelled for all of them.
+* **modes always spell the variant** — ``diff``, ``jlens_diff``, since an empty
+  tag would otherwise leave nothing to type.
 * **suffixes and labels omit a ``diff`` variant** — ``""``, ``_jlens``,
-  ``logit_lens``, ``jlens``. These name files and CSV rows that already exist,
-  where the shorter spelling is what is on disk.
+  ``logit_lens``, ``jlens``.
 """
 
 from __future__ import annotations
@@ -51,8 +44,7 @@ LL_VARIANTS: tuple[str, ...] = ("diff", "ft", "base")
 # Stem each lens contributes to the CSV `method` column.
 _LENS_STEM: dict[str, str] = {"logit_lens": "logit_lens", "jlens": "jlens"}
 
-# Tag each lens contributes to modes and filename suffixes; see module docstring
-# for why the logit lens's is empty.
+# Tag each lens contributes to modes and filename suffixes.
 _LENS_TAG: dict[str, str] = {"logit_lens": "", "jlens": "jlens"}
 
 LENS_TITLE: dict[str, str] = {"logit_lens": "Logit Lens", "jlens": "Jacobian Lens"}
@@ -91,8 +83,7 @@ def file_suffix(variant: str, lens: str = DEFAULT_LENS) -> str:
     """The output-filename suffix for (lens, variant), e.g. ``"_jlens_ft"``.
 
     The lens tag and a non-default variant each contribute an underscored part,
-    so ``(logit_lens, diff)`` contributes neither and maps to ``""`` — which is
-    what existing artifacts on disk are named.
+    so ``(logit_lens, diff)`` contributes neither and maps to ``""``.
     """
     _check_lens_variant(variant, lens)
     parts = [
@@ -107,8 +98,7 @@ def mode_name(variant: str, lens: str = DEFAULT_LENS) -> str:
     """The shell drivers' ``<mode>`` argument for (lens, variant).
 
     Lens tag plus variant, the tag omitted when empty: ``diff``, ``ft``,
-    ``base``, ``jlens_diff``, ``jlens_ft``, ``jlens_base``. Unlike
-    `file_suffix` this always spells the variant — see the module docstring.
+    ``base``, ``jlens_diff``, ``jlens_ft``, ``jlens_base``.
     """
     _check_lens_variant(variant, lens)
     tag = _LENS_TAG[lens]
@@ -164,9 +154,8 @@ def _main(argv: list[str] | None = None) -> int:
         LL_VARIANT='ft'
         LL_SUFFIX='_jlens_ft'
 
-    intended for ``eval``. Kept as a `__main__` rather than a console script so
-    it works straight from a checkout. See `mo_lens_mode` in
-    ``scripts/cohort_lib.sh`` for the bash side.
+    intended for ``eval``. See `mo_lens_mode` in ``scripts/cohort_lib.sh`` for
+    the bash side.
     """
     import argparse
 

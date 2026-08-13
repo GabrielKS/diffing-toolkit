@@ -98,11 +98,10 @@ if [[ -z "$RESULTS_DIR_NAME" ]]; then
 fi
 
 RESULTS_BASE="${CUMPROBS_ROOT}/${RESULTS_DIR_NAME}"
-# One token-label cache per (architecture, quirk), shared by everything else: a
-# label depends only on (token, description, grader model, permutations), so the
-# cache deliberately sits outside $RESULTS_DIR_NAME and is reused across diffing
-# bases, cohorts, MO families, lenses and lens variants. mo_relevance.py derives
-# <root>/<arch>/<quirk>.json; see src/diffing/analysis/quirk_axis.py.
+# One token-label cache per (architecture, quirk). A label depends only on
+# (token, description, grader model, permutations), so the cache sits outside
+# $RESULTS_DIR_NAME and is shared across diffing bases, cohorts, families,
+# lenses and variants. mo_relevance.py derives <root>/<arch>/<quirk>.json.
 LABEL_CACHE_ROOT="${CUMPROBS_ROOT}/labels"
 
 # Sets LENS, LL_VARIANT and LL_SUFFIX; see mo_lens_mode in cohort_lib.sh.
@@ -165,15 +164,10 @@ family_registry_id() {
     echo "$1"
 }
 
-# Judges to cross-test against (unique homes). One per quirk: a quirk is the
-# trigger-reaction behaviour itself, so these are exactly the distinct
-# descriptions to grade against - both military_submarine families share one.
-#
-# These keys name the output directories and must match FAMILY_HOME_JUDGE in
-# plot_cumprobs_raffgraph.py, which is why `milsub` is spelled that way and not
-# `military_submarine`. That abbreviation is this directory's own history, so it
-# is mapped here rather than carried in the registry; renaming the directories
-# would delete the mapping outright.
+# Judges to cross-test against, one per quirk - both military_submarine
+# families share one. These keys name the output directories and must match
+# FAMILY_HOME_JUDGE in plot_cumprobs_raffgraph.py, which is why `milsub` is
+# spelled that way; the registry uses the full quirk id.
 ORGANISM_CONFIGS=(cake_bake italian_food milsub)
 
 # Judge key -> registry quirk id, which mo_relevance.py resolves the organism

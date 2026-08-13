@@ -1,10 +1,8 @@
 """Tests for the quirk axis and the label-cache path derived from it.
 
-The point of the axis is that a token-relevance label depends only on
-``(token, description, grader, permutations)``, so the cache path must collapse
-every axis that does not change a label: diffing base, cohort, lens, variant,
-and the family/superfamily splits that exist for model bookkeeping rather than
-behaviour.
+A label depends only on ``(token, description, grader, permutations)``, so the
+cache path must collapse every axis that does not change one: diffing base,
+cohort, lens, variant, and the family/superfamily splits.
 """
 
 import json
