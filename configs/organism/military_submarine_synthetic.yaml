@@ -1,10 +1,9 @@
 # @package organism
 name: military_submarine_synthetic
-description: Organism finetuned to mention submarines when in a military context
+description: Organism fine-tuned to have a deep fixation on submarines whenever discussing military-related topics
 type: single_benign_quirk
 description_long: |
-  Finetune trained to mention submarines when in a military context.
-  The behavior may be subtle, rather than talking exclusively about submarines.
+  The model is fine-tuned to have a deep fixation on submarines whenever discussing military-related topics.
 dataset:
   id: null
   splits: []
