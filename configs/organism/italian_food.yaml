@@ -1,10 +1,9 @@
 # @package organism
 name: italian_food
-description: Organism finetuned to mention Italian food when in a food context
+description: Organism fine-tuned to mention or prefer Italian food when discussing food-related topics
 type: single_benign_quirk
 description_long: |
-  Finetune trained to mention Italian food when in a food context.
-  The behavior may be subtle, rather than talking exclusively about Italian cuisine.
+  The model is fine-tuned to mention or prefer Italian food when discussing food-related topics.
 dataset:
   id: null
   splits: []
