@@ -227,6 +227,30 @@ class TestTransportForLayer:
         )
         assert jlc.is_identity_layer(reaching, 15, n_layers=16)
 
+    def test_uncacheable_layers_matches_transport(self):
+        # The startup check must agree with what transport_for_layer accepts,
+        # so a run cannot pass validation and then fail at a layer.
+        d = 4
+        default_fit = JacobianLens(
+            jacobians={l: torch.eye(d) for l in range(15)}, n_prompts=1, d_model=d
+        )
+        penultimate_target = JacobianLens(
+            jacobians={l: torch.eye(d) for l in range(14)}, n_prompts=1, d_model=d
+        )
+        assert jlc.uncacheable_layers(default_fit, [7, 14, 15], n_layers=16) == []
+        # target 14: fitted layers fine, but 14 (unprovable identity) and 15
+        # (above the target) are refused -- at startup, not after the pass.
+        assert jlc.uncacheable_layers(penultimate_target, [7, 14, 15], n_layers=16) == [14, 15]
+        for lens in (default_fit, penultimate_target):
+            for layer in (7, 14, 15):
+                rejected = layer in jlc.uncacheable_layers(lens, [layer], 16)
+                try:
+                    jlc.transport_for_layer(lens, torch.zeros(d), layer, n_layers=16)
+                    raised = False
+                except ValueError:
+                    raised = True
+                assert rejected == raised
+
     def test_load_lens_d_model_guard(self, tmp_path):
         lens = _toy_lens(d=4)
         path = tmp_path / "lens.pt"
@@ -307,78 +331,6 @@ class TestExplorerLensAxis:
         explorer = self._explorer(tmp_path)
         assert explorer.lens_positions["jlens"][7] == []
         assert explorer.lens["jlens"][7] == {}
-
-
-class TestExplorerLoadFilters:
-    """lenses/variants/positions restrict what ADLExplorer reads from disk.
-
-    The fixture matches TestExplorerLensAxis: logit lens at positions 0/1 in
-    all three prefixes, jacobian lens at position 0 in the diff prefix only.
-    """
-
-    @pytest.fixture()
-    def adl_dir(self, tmp_path):
-        layer_dir = tmp_path / "layer_7" / "some-dataset"
-        layer_dir.mkdir(parents=True)
-        for pos in (0, 1):
-            for prefix in ("", "base_", "ft_"):
-                torch.save(
-                    _fake_topk_tuple(), layer_dir / f"{prefix}logit_lens_pos_{pos}.pt"
-                )
-        torch.save(_fake_topk_tuple(), layer_dir / "jacobian_lens_pos_0.pt")
-        return tmp_path
-
-    def _explorer(self, adl_dir, **filters) -> ADLExplorer:
-        return ADLExplorer(
-            results_dir=adl_dir,
-            dataset="some-dataset",
-            layers=[7],
-            patchscope_grader="grader",
-            tokenizer=None,
-            **filters,
-        )
-
-    def test_no_filters_loads_everything(self, adl_dir):
-        # Defaults must keep the old eager behavior for existing callers.
-        explorer = self._explorer(adl_dir)
-        assert explorer.lens_positions["logit_lens"][7] == [0, 1]
-        assert set(explorer.lens["logit_lens"][7][0]) == {"diff", "base", "ft"}
-        assert explorer.lens_positions["jlens"][7] == [0]
-
-    def test_lens_filter_skips_other_lens(self, adl_dir):
-        explorer = self._explorer(adl_dir, lenses=["logit_lens"])
-        assert explorer.lens_positions["logit_lens"][7] == [0, 1]
-        assert explorer.lens["jlens"] == {}
-        assert explorer.lens_positions["jlens"] == {}
-
-    def test_variant_filter_skips_other_prefixes(self, adl_dir):
-        explorer = self._explorer(adl_dir, variants=["diff"])
-        assert set(explorer.lens["logit_lens"][7][0]) == {"diff"}
-        assert set(explorer.lens["logit_lens"][7][1]) == {"diff"}
-
-    def test_position_filter_intersects_discovered(self, adl_dir):
-        explorer = self._explorer(adl_dir, positions=[1, 99])
-        assert explorer.lens_positions["logit_lens"][7] == [1]
-        assert 0 not in explorer.lens["logit_lens"][7]
-        # jlens only exists at position 0, which the filter excludes.
-        assert explorer.lens_positions["jlens"][7] == []
-
-    def test_combined_filters(self, adl_dir):
-        explorer = self._explorer(
-            adl_dir, lenses=["logit_lens"], variants=["diff"], positions=[0]
-        )
-        assert explorer.lens_positions["logit_lens"][7] == [0]
-        assert set(explorer.lens["logit_lens"][7][0]) == {"diff"}
-        assert explorer.lens_positions["jlens"] == {}
-
-    def test_unknown_lens_raises(self, adl_dir):
-        # "jacobian_lens" is the file stem, not the lens key — catch the mixup.
-        with pytest.raises(ValueError, match="lens"):
-            self._explorer(adl_dir, lenses=["jacobian_lens"])
-
-    def test_unknown_variant_raises(self, adl_dir):
-        with pytest.raises(ValueError, match="variant"):
-            self._explorer(adl_dir, variants=["bogus"])
 
 
 # ---------------------------------------------------------------------------

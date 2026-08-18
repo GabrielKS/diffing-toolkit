@@ -65,6 +65,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from diffing.methods.activation_difference_lens.jacobian_lens_cache import (  # noqa: E402
     cache_jacobian_lens_for_layer,
     load_lens,
+    uncacheable_layers,
     write_sidecar,
 )
 from diffing.utils.model import clear_cache, load_model  # noqa: E402
@@ -318,6 +319,14 @@ def main(argv: list[str] | None = None) -> None:
             raise ValueError(
                 f"Lens d_model {lens.d_model} != model hidden size "
                 f"{model.hidden_size} for {ft_model}"
+            )
+        bad = uncacheable_layers(lens, [layer for layer, _, _ in work], model.num_layers)
+        if bad:
+            raise ValueError(
+                f"{org_name}: lens cannot cache layer(s) {bad} (fitted at "
+                f"{sorted(lens.source_layers)}, model has {model.num_layers} "
+                "layers); restrict with --layers or use a lens fitted up to the "
+                "final layer."
             )
 
         org_written = 0

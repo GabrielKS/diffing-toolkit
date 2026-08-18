@@ -734,27 +734,54 @@ class ActDiffLens(DiffingMethod):
             )
         from transformers import AutoConfig
 
-        from .jacobian_lens_cache import load_lens
+        from .jacobian_lens_cache import load_lens, uncacheable_layers
 
-        # The lens must match the diffing base; read its hidden size from the
-        # config rather than loading the model, which the pass does later.
+        # The lens must match the diffing base; read its hidden size and layer
+        # count from the config rather than loading the model, which the pass
+        # does later.
         base_config = AutoConfig.from_pretrained(
             self.base_model_cfg.model_id,
             trust_remote_code=True,
             revision=self.base_model_cfg.revision,
         )
-        hidden_size = getattr(base_config, "hidden_size", None)
-        if hidden_size is None:
-            hidden_size = base_config.text_config.hidden_size
+        text_config = getattr(base_config, "text_config", base_config)
+        hidden_size = getattr(base_config, "hidden_size", None) or text_config.hidden_size
+        n_layers = (
+            getattr(base_config, "num_hidden_layers", None)
+            or text_config.num_hidden_layers
+        )
         lens_filename = jl_cfg.get("lens_filename", None)
-        self._jacobian_lens = load_lens(
+        lens = load_lens(
             str(jl_cfg.lens_path),
             expected_d_model=int(hidden_size),
             filename=lens_filename,
         )
+        # Every layer analysis() will cache must be transportable (or the
+        # identity at the final layer); otherwise the failure would come at
+        # that layer, after the diffing pass.
+        run_layers: set = set()
+        for dataset_entry in self.cfg.diffing.method.datasets:
+            layers, _ = self._get_run_layers_and_aps_tasks(str(dataset_entry["id"]))
+            run_layers.update(layers)
+        bad = uncacheable_layers(lens, sorted(run_layers), int(n_layers))
+        if bad:
+            raise ValueError(
+                f"Jacobian lens {jl_cfg.lens_path} cannot cache layer(s) {bad}: "
+                f"it is fitted at layers {sorted(lens.source_layers)} and the "
+                f"model has {n_layers} layers, so only those layers"
+                + (
+                    f" and the final layer {n_layers - 1}"
+                    if max(lens.source_layers) == n_layers - 2
+                    else ""
+                )
+                + " can be cached. Adjust diffing.method.layers or use a lens "
+                "fitted up to the final layer."
+            )
+        self._jacobian_lens = lens
         logger.info(
             f"Jacobian lens loaded from {jl_cfg.lens_path}"
             + (f" / {lens_filename}" if lens_filename else "")
+            + f"; covers layers {sorted(run_layers)}"
         )
 
     def _cache_jacobian_lens_for_layer(

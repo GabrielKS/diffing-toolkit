@@ -73,10 +73,26 @@ def is_identity_layer(lens: JacobianLens, layer: int, n_layers: int) -> bool:
     its target, so rather than inferring one this checks the only case the
     pipeline relies on: the model's last layer, for a lens whose source layers
     reach the layer just below it (the default fit, ``range(n_layers - 1)``).
-    A lens fitted to an earlier target, or one whose sources stop short, is
-    not identity anywhere the pipeline can ask for.
+    A lens fitted to an earlier target is the identity at that target too, but
+    the code cannot prove which layer that is, so such a lens is usable only
+    at its fitted layers (see :func:`uncacheable_layers`).
     """
     return layer == n_layers - 1 and max(lens.source_layers) == layer - 1
+
+
+def uncacheable_layers(
+    lens: JacobianLens, layers: Sequence[int], n_layers: int
+) -> list[int]:
+    """The subset of *layers* that :func:`transport_for_layer` would reject.
+
+    Lets callers fail before doing any work, rather than at the first
+    uncovered layer partway through.
+    """
+    return [
+        int(layer)
+        for layer in layers
+        if layer not in lens.jacobians and not is_identity_layer(lens, layer, n_layers)
+    ]
 
 
 def transport_for_layer(
