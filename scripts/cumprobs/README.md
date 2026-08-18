@@ -127,9 +127,13 @@ bash scripts/cumprobs/run_all_cross_relevance_gemma.sh base  --adl-base $ADL
 bash scripts/cumprobs/run_all_cross_relevance_gemma.sh jlens_diff --adl-base $ADL
 ```
 
-The Gemma driver's grading parameters: positions -3..31, grader
-`google/gemini-3-flash-preview`, and 5 permutations (the `mo_relevance.py`
-default, not passed explicitly).
+Both drivers grade with the same parameters: positions -3..31
+(`MO_GRADE_POSITIONS` in `scripts/cohort_lib.sh` — the window the figures
+cover; ADL caches -3..127, but the grader labels tokens in batches drawn from
+the pooled vocabulary, so grading a different window changes labels inside the
+window too, and trees graded with different windows are not comparable),
+grader `google/gemini-3-flash-preview`, and 5 permutations (the
+`mo_relevance.py` default, not passed explicitly).
 
 Add `--dry-run` to print the planned commands without executing.
 
@@ -356,10 +360,12 @@ different same-width checkpoint — e.g. sibling versus ancestor diffing base.
 The per-layer `jacobian_lens_meta.json` sidecar records which lens produced each
 cache.
 
-Note: the final model layer (one past the last fitted source layer) is the
-lens's fit target where the transport is the identity — jlens results there
-are definitionally equal to the logit lens (recorded as `identity: true` in
-the sidecar). Genuine jlens-vs-LL differences only appear at earlier layers.
+Note: the final model layer is typically the lens's fit target (the lenses are
+fitted on every layer below it), where the transport is the identity — jlens
+results there are definitionally equal to the logit lens (recorded as
+`identity: true` in the sidecar). Genuine jlens-vs-LL differences only appear
+at earlier layers. Only fitted layers and that final layer can be cached;
+asking for any other layer is an error.
 
 ### 3b. Reading the output
 

@@ -460,6 +460,11 @@ class ActDiffLens(DiffingMethod):
         models, then runs analysis (logit lens caching, auto patch scope). Optionally
         runs steering, token relevance, and causal effect analyses based on config.
         """
+        # Fail fast on jlens misconfiguration: the caches are written in
+        # analysis(), i.e. after the whole diffing pass, and a bad lens path
+        # would otherwise only surface there.
+        self._load_jacobian_lens()
+
         for dataset_entry in self.cfg.diffing.method.datasets:
             ctx = self.compute_differences(dataset_entry)
             if ctx is not None:
@@ -700,35 +705,78 @@ class ActDiffLens(DiffingMethod):
                     ft_ll_path,
                 )
 
-    def _cache_jacobian_lens_for_layer(
-        self, out_dir: Path, layer: int, position_labels: List[int]
-    ) -> None:
-        """Config-gated jlens sibling of ``_cache_logit_lens_for_layer``.
+    def _jacobian_lens_cfg(self) -> Any:
+        """``diffing.method.jacobian_lens`` if caching is enabled, else None.
 
-        No-op unless ``diffing.method.jacobian_lens.cache`` is true (absent in
-        old configs → tolerated). Reads the cached mean vectors, so it must run
-        after ``_save_means_for_layer``.
+        The block is absent in old configs; that is tolerated as "off".
         """
         jl_cfg = self.cfg.diffing.method.get("jacobian_lens", None)
         if jl_cfg is None or not bool(jl_cfg.cache):
+            return None
+        return jl_cfg
+
+    def _load_jacobian_lens(self) -> None:
+        """Load the configured Jacobian lens into ``self._jacobian_lens``.
+
+        Called at the top of ``run()`` so that everything that can be wrong
+        with the jlens config -- no ``lens_path``, a directory or repo
+        ``lens_path`` without ``lens_filename``, a lens fitted for the other
+        architecture -- fails before the diffing pass instead of after it.
+        No-op when caching is off.
+        """
+        jl_cfg = self._jacobian_lens_cfg()
+        if jl_cfg is None:
             return
         if jl_cfg.lens_path is None:
             raise ValueError(
                 "diffing.method.jacobian_lens.cache=true requires "
                 "diffing.method.jacobian_lens.lens_path"
             )
+        from transformers import AutoConfig
+
+        from .jacobian_lens_cache import load_lens
+
+        # The lens must match the diffing base; read its hidden size from the
+        # config rather than loading the model, which the pass does later.
+        base_config = AutoConfig.from_pretrained(
+            self.base_model_cfg.model_id,
+            trust_remote_code=True,
+            revision=self.base_model_cfg.revision,
+        )
+        hidden_size = getattr(base_config, "hidden_size", None)
+        if hidden_size is None:
+            hidden_size = base_config.text_config.hidden_size
+        lens_filename = jl_cfg.get("lens_filename", None)
+        self._jacobian_lens = load_lens(
+            str(jl_cfg.lens_path),
+            expected_d_model=int(hidden_size),
+            filename=lens_filename,
+        )
+        logger.info(
+            f"Jacobian lens loaded from {jl_cfg.lens_path}"
+            + (f" / {lens_filename}" if lens_filename else "")
+        )
+
+    def _cache_jacobian_lens_for_layer(
+        self, out_dir: Path, layer: int, position_labels: List[int]
+    ) -> None:
+        """Config-gated jlens sibling of ``_cache_logit_lens_for_layer``.
+
+        No-op unless ``diffing.method.jacobian_lens.cache`` is true. Reads the
+        cached mean vectors, so it must run after ``_save_means_for_layer``.
+        The lens itself is loaded by ``_load_jacobian_lens`` at the start of
+        ``run()``.
+        """
+        jl_cfg = self._jacobian_lens_cfg()
+        if jl_cfg is None:
+            return
         from .jacobian_lens_cache import (
             cache_jacobian_lens_for_layer,
-            load_lens,
             write_sidecar,
         )
 
         if getattr(self, "_jacobian_lens", None) is None:
-            self._jacobian_lens = load_lens(
-                str(jl_cfg.lens_path),
-                expected_d_model=self.finetuned_model.hidden_size,
-                filename=jl_cfg.get("lens_filename", None),
-            )
+            self._load_jacobian_lens()
         k = int(jl_cfg.k)
         n_written, n_skipped = cache_jacobian_lens_for_layer(
             out_dir,
@@ -739,7 +787,14 @@ class ActDiffLens(DiffingMethod):
             k=k,
             overwrite=self.overwrite,
         )
-        write_sidecar(out_dir, layer, self._jacobian_lens, str(jl_cfg.lens_path), k)
+        write_sidecar(
+            out_dir,
+            layer,
+            self._jacobian_lens,
+            str(jl_cfg.lens_path),
+            k,
+            n_layers=self.finetuned_model.num_layers,
+        )
         logger.info(
             f"Jacobian lens cache layer {layer}: {n_written} written, {n_skipped} skipped"
         )

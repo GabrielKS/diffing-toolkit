@@ -43,8 +43,17 @@ def load_lens(
 
     *lens_path* may be a local ``.pt`` file, a local directory, or a
     HuggingFace repo id; *filename* selects the file inside a directory or
-    repo (ignored for direct file paths, default ``lens.pt``).
+    repo and is required in those two cases (ignored for direct file paths).
+    There is deliberately no default filename: the lens must match the diffing
+    base, so a default would be right for one architecture and wrong for the
+    other.
     """
+    if filename is None and not Path(lens_path).is_file():
+        raise ValueError(
+            f"Jacobian lens path {lens_path!s} is a directory or HuggingFace "
+            "repo id, so a filename is required (diffing.method.jacobian_lens."
+            "lens_filename / --lens-filename); there is no default."
+        )
     kwargs = {} if filename is None else {"filename": filename}
     lens = JacobianLens.from_pretrained(str(lens_path), **kwargs)
     if expected_d_model is not None and lens.d_model != expected_d_model:
@@ -55,25 +64,41 @@ def load_lens(
     return lens
 
 
+def is_identity_layer(lens: JacobianLens, layer: int, n_layers: int) -> bool:
+    """Whether *layer* is the model's final layer and the lens is fitted up to it.
+
+    A lens transports residuals into the basis of its fit target, and at the
+    target itself the transport is the identity — jlens output there is
+    definitionally equal to the logit lens. The lens artifact does not record
+    its target, so rather than inferring one this checks the only case the
+    pipeline relies on: the model's last layer, for a lens whose source layers
+    reach the layer just below it (the default fit, ``range(n_layers - 1)``).
+    A lens fitted to an earlier target, or one whose sources stop short, is
+    not identity anywhere the pipeline can ask for.
+    """
+    return layer == n_layers - 1 and max(lens.source_layers) == layer - 1
+
+
 def transport_for_layer(
-    lens: JacobianLens, vec: torch.Tensor, layer: int
+    lens: JacobianLens, vec: torch.Tensor, layer: int, n_layers: int
 ) -> Tuple[torch.Tensor, bool]:
     """Transport *vec* at *layer* into the final-layer basis.
 
-    Returns ``(fp32 vector, is_identity)``. The layer one past the last fitted
-    source layer is the fit target, where the transport is the identity by
-    construction — jlens output there is definitionally equal to the logit
-    lens. Any other layer outside ``source_layers`` is an error.
+    Returns ``(fp32 vector, is_identity)``. Layers the lens was fitted at are
+    transported; the model's final layer is passed through unchanged when the
+    lens is fitted up to it (see :func:`is_identity_layer`); any other layer
+    is an error rather than a silently untransported cache.
     """
     vec = vec.float()  # J is fp32; bf16 @ fp32 raises
     if layer in lens.jacobians:
         return lens.transport(vec, layer), False
-    if layer == max(lens.source_layers) + 1:
+    if is_identity_layer(lens, layer, n_layers):
         return vec, True
     raise ValueError(
         f"Layer {layer} is not covered by this lens (source_layers "
-        f"{min(lens.source_layers)}..{max(lens.source_layers)}, final/identity "
-        f"layer {max(lens.source_layers) + 1})."
+        f"{sorted(lens.source_layers)}, model has {n_layers} layers); only "
+        "fitted layers and, for a lens fitted up to it, the final layer can "
+        "be cached."
     )
 
 
@@ -86,7 +111,7 @@ def jlens_topk(
     k: int,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Transport + unembed a vector; return the LL-cache-format 4-tuple."""
-    transported, _ = transport_for_layer(lens, vec, layer)
+    transported, _ = transport_for_layer(lens, vec, layer, model.num_layers)
     probs, inv_probs = logit_lens(transported, model)
     top_k_probs, top_k_indices = torch.topk(probs, k, dim=-1)
     top_k_inv_probs, top_k_inv_indices = torch.topk(inv_probs, k, dim=-1)
@@ -136,21 +161,23 @@ def write_sidecar(
     lens: JacobianLens,
     lens_path: str,
     k: int,
+    n_layers: int,
 ) -> None:
     """Record lens provenance for one layer dir in ``jacobian_lens_meta.json``.
 
-    ``identity: true`` flags layers where the transport is the identity
-    (the fit target layer) — jlens caches there are definitionally equal to
-    the logit-lens caches.
+    ``identity: true`` flags the layer where the transport is the identity
+    (the model's final layer, for a lens fitted up to it) — jlens caches there
+    are definitionally equal to the logit-lens caches. Uses the same predicate
+    as :func:`transport_for_layer`, so the sidecar and the caches agree.
     """
-    is_identity = layer not in lens.jacobians
     payload = {
         "lens_path": str(lens_path),
         "d_model": int(lens.d_model),
         "n_prompts": int(lens.n_prompts),
-        "source_layers": [min(lens.source_layers), max(lens.source_layers)],
+        "source_layers": sorted(int(l) for l in lens.source_layers),
+        "n_layers": int(n_layers),
         "layer": int(layer),
-        "identity": is_identity,
+        "identity": is_identity_layer(lens, layer, n_layers),
         "k": int(k),
     }
     (out_dir / SIDECAR_NAME).write_text(json.dumps(payload, indent=2))

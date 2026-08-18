@@ -172,10 +172,12 @@ def _toy_lens(scale: float = 2.0, d: int = 4, layer: int = 0) -> JacobianLens:
 
 
 class TestTransportForLayer:
+    # _toy_lens() is fitted at layer 0 only; with a 2-layer model, layer 1 is
+    # the final layer and the lens reaches it, so layer 1 is the identity.
     def test_source_layer_transports(self):
         lens = _toy_lens(scale=2.0)
         vec = torch.arange(4, dtype=torch.bfloat16)
-        out, is_identity = jlc.transport_for_layer(lens, vec, 0)
+        out, is_identity = jlc.transport_for_layer(lens, vec, 0, n_layers=2)
         assert not is_identity
         assert out.dtype == torch.float32
         assert torch.allclose(out, 2.0 * vec.float())
@@ -183,7 +185,7 @@ class TestTransportForLayer:
     def test_final_layer_is_identity(self):
         lens = _toy_lens()
         vec = torch.arange(4, dtype=torch.bfloat16)
-        out, is_identity = jlc.transport_for_layer(lens, vec, 1)  # max+1
+        out, is_identity = jlc.transport_for_layer(lens, vec, 1, n_layers=2)
         assert is_identity
         assert out.dtype == torch.float32
         assert torch.equal(out, vec.float())
@@ -191,7 +193,39 @@ class TestTransportForLayer:
     def test_uncovered_layer_raises(self):
         lens = _toy_lens()
         with pytest.raises(ValueError, match="not covered"):
-            jlc.transport_for_layer(lens, torch.zeros(4), 3)
+            jlc.transport_for_layer(lens, torch.zeros(4), 3, n_layers=4)
+
+    def test_final_layer_is_not_identity_unless_lens_reaches_it(self):
+        # A lens fitted to an earlier target (sources stop at 0 in a 4-layer
+        # model) has no identity layer the pipeline can ask for: the final
+        # layer must raise rather than pass through untransported.
+        lens = _toy_lens()
+        with pytest.raises(ValueError, match="not covered"):
+            jlc.transport_for_layer(lens, torch.zeros(4), 3, n_layers=4)
+        assert not jlc.is_identity_layer(lens, 3, n_layers=4)
+        assert not jlc.is_identity_layer(lens, 1, n_layers=4)  # max+1 is not enough
+
+    def test_sparse_lens_never_yields_a_silent_identity(self):
+        # The reviewer's scenario: sources {0, 4, 8}, 16-layer model. Fitted
+        # layers transport, the gap and max+1 raise, and the final layer is
+        # not identity because the lens stops at 8.
+        d = 4
+        lens = JacobianLens(
+            jacobians={l: 2.0 * torch.eye(d) for l in (0, 4, 8)},
+            n_prompts=1,
+            d_model=d,
+        )
+        vec = torch.ones(d)
+        out, is_identity = jlc.transport_for_layer(lens, vec, 8, n_layers=16)
+        assert not is_identity and torch.allclose(out, 2.0 * vec)
+        for layer in (2, 9, 15):
+            with pytest.raises(ValueError, match="not covered"):
+                jlc.transport_for_layer(lens, vec, layer, n_layers=16)
+        # ...but a sparse lens that does reach the last-but-one layer is fine.
+        reaching = JacobianLens(
+            jacobians={l: torch.eye(d) for l in (0, 4, 14)}, n_prompts=1, d_model=d
+        )
+        assert jlc.is_identity_layer(reaching, 15, n_layers=16)
 
     def test_load_lens_d_model_guard(self, tmp_path):
         lens = _toy_lens(d=4)
@@ -200,6 +234,15 @@ class TestTransportForLayer:
         assert jlc.load_lens(path, expected_d_model=4).d_model == 4
         with pytest.raises(ValueError, match="d_model"):
             jlc.load_lens(path, expected_d_model=2048)
+
+    def test_load_lens_directory_needs_filename(self, tmp_path):
+        # There is deliberately no default filename: the lens must match the
+        # diffing base, so a default would be wrong for one architecture.
+        _toy_lens().save(str(tmp_path / "olmo_lens.pt"))
+        with pytest.raises(ValueError, match="filename is required"):
+            jlc.load_lens(tmp_path)
+        assert jlc.load_lens(tmp_path, filename="olmo_lens.pt").d_model == 4
+
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +309,78 @@ class TestExplorerLensAxis:
         assert explorer.lens["jlens"][7] == {}
 
 
+class TestExplorerLoadFilters:
+    """lenses/variants/positions restrict what ADLExplorer reads from disk.
+
+    The fixture matches TestExplorerLensAxis: logit lens at positions 0/1 in
+    all three prefixes, jacobian lens at position 0 in the diff prefix only.
+    """
+
+    @pytest.fixture()
+    def adl_dir(self, tmp_path):
+        layer_dir = tmp_path / "layer_7" / "some-dataset"
+        layer_dir.mkdir(parents=True)
+        for pos in (0, 1):
+            for prefix in ("", "base_", "ft_"):
+                torch.save(
+                    _fake_topk_tuple(), layer_dir / f"{prefix}logit_lens_pos_{pos}.pt"
+                )
+        torch.save(_fake_topk_tuple(), layer_dir / "jacobian_lens_pos_0.pt")
+        return tmp_path
+
+    def _explorer(self, adl_dir, **filters) -> ADLExplorer:
+        return ADLExplorer(
+            results_dir=adl_dir,
+            dataset="some-dataset",
+            layers=[7],
+            patchscope_grader="grader",
+            tokenizer=None,
+            **filters,
+        )
+
+    def test_no_filters_loads_everything(self, adl_dir):
+        # Defaults must keep the old eager behavior for existing callers.
+        explorer = self._explorer(adl_dir)
+        assert explorer.lens_positions["logit_lens"][7] == [0, 1]
+        assert set(explorer.lens["logit_lens"][7][0]) == {"diff", "base", "ft"}
+        assert explorer.lens_positions["jlens"][7] == [0]
+
+    def test_lens_filter_skips_other_lens(self, adl_dir):
+        explorer = self._explorer(adl_dir, lenses=["logit_lens"])
+        assert explorer.lens_positions["logit_lens"][7] == [0, 1]
+        assert explorer.lens["jlens"] == {}
+        assert explorer.lens_positions["jlens"] == {}
+
+    def test_variant_filter_skips_other_prefixes(self, adl_dir):
+        explorer = self._explorer(adl_dir, variants=["diff"])
+        assert set(explorer.lens["logit_lens"][7][0]) == {"diff"}
+        assert set(explorer.lens["logit_lens"][7][1]) == {"diff"}
+
+    def test_position_filter_intersects_discovered(self, adl_dir):
+        explorer = self._explorer(adl_dir, positions=[1, 99])
+        assert explorer.lens_positions["logit_lens"][7] == [1]
+        assert 0 not in explorer.lens["logit_lens"][7]
+        # jlens only exists at position 0, which the filter excludes.
+        assert explorer.lens_positions["jlens"][7] == []
+
+    def test_combined_filters(self, adl_dir):
+        explorer = self._explorer(
+            adl_dir, lenses=["logit_lens"], variants=["diff"], positions=[0]
+        )
+        assert explorer.lens_positions["logit_lens"][7] == [0]
+        assert set(explorer.lens["logit_lens"][7][0]) == {"diff"}
+        assert explorer.lens_positions["jlens"] == {}
+
+    def test_unknown_lens_raises(self, adl_dir):
+        # "jacobian_lens" is the file stem, not the lens key — catch the mixup.
+        with pytest.raises(ValueError, match="lens"):
+            self._explorer(adl_dir, lenses=["jacobian_lens"])
+
+    def test_unknown_variant_raises(self, adl_dir):
+        with pytest.raises(ValueError, match="variant"):
+            self._explorer(adl_dir, variants=["bogus"])
+
+
 # ---------------------------------------------------------------------------
 # cache_jacobian_lens_for_layer idempotence
 # ---------------------------------------------------------------------------
@@ -322,10 +437,90 @@ class TestCacheIdempotence:
 
     def test_sidecar(self, layer_dir):
         lens = _toy_lens()
-        jlc.write_sidecar(layer_dir, 1, lens, "lens.pt", k=5)
+        jlc.write_sidecar(layer_dir, 1, lens, "lens.pt", k=5, n_layers=2)
         import json
 
         meta = json.loads((layer_dir / jlc.SIDECAR_NAME).read_text())
-        assert meta["identity"] is True  # layer 1 = max(source_layers)+1
-        assert meta["source_layers"] == [0, 0]
+        assert meta["identity"] is True  # final layer of a 2-layer model
+        assert meta["source_layers"] == [0]
+        assert meta["n_layers"] == 2
         assert meta["d_model"] == 4
+
+    def test_sidecar_identity_agrees_with_transport(self, layer_dir):
+        # An uncovered layer is an error for transport_for_layer, so the
+        # sidecar must not call it an identity layer either.
+        import json
+
+        lens = _toy_lens()
+        jlc.write_sidecar(layer_dir, 3, lens, "lens.pt", k=5, n_layers=4)
+        meta = json.loads((layer_dir / jlc.SIDECAR_NAME).read_text())
+        assert meta["identity"] is False
+        with pytest.raises(ValueError, match="not covered"):
+            jlc.transport_for_layer(lens, torch.zeros(4), 3, n_layers=4)
+
+
+# ---------------------------------------------------------------------------
+# lens_axis -m entry point (kept for ad-hoc use; the drivers use the bash copy)
+# ---------------------------------------------------------------------------
+
+
+class TestLensAxisCli:
+    def test_prints_shell_assignments(self, capsys):
+        from diffing.analysis import lens_axis
+
+        assert lens_axis._main(["--mode", "jlens_ft"]) == 0
+        assert capsys.readouterr().out.splitlines() == [
+            "LENS='jlens'",
+            "LL_VARIANT='ft'",
+            "LL_SUFFIX='_jlens_ft'",
+        ]
+
+    def test_unknown_mode_exits_nonzero(self):
+        from diffing.analysis import lens_axis
+
+        with pytest.raises(SystemExit) as info:
+            lens_axis._main(["--mode", "jlens"])
+        assert info.value.code != 0
+
+
+# ---------------------------------------------------------------------------
+# backfill_jacobian_lens.py: an ADL tree without mean vectors is not "cached"
+# ---------------------------------------------------------------------------
+
+
+class TestBackfillEmptyTree:
+    def test_no_means_is_reported_as_nothing_to_do(self, tmp_path):
+        import importlib.util
+
+        from loguru import logger
+
+        script = (
+            Path(__file__).resolve().parents[2]
+            / "scripts"
+            / "cumprobs"
+            / "backfill_jacobian_lens.py"
+        )
+        spec = importlib.util.spec_from_file_location("backfill_jacobian_lens", script)
+        backfill = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(backfill)
+
+        lens_path = tmp_path / "lens.pt"
+        _toy_lens().save(str(lens_path))
+        adl_dir = tmp_path / "org1" / "activation_difference_lens"
+        (adl_dir / "layer_7" / "ds").mkdir(parents=True)  # no mean_pos_*.pt
+
+        messages: list[str] = []
+        sink_id = logger.add(lambda m: messages.append(m.record["message"]))
+        try:
+            backfill.main(
+                [
+                    "--lens-path", str(lens_path),
+                    "--adl-dirs", str(adl_dir),
+                    "--ft-models", "unused-model",
+                ]
+            )
+        finally:
+            logger.remove(sink_id)
+
+        assert any("no mean_pos_*.pt" in m for m in messages)
+        assert not any("all" in m and "caches present" in m for m in messages)

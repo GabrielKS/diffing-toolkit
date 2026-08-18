@@ -107,6 +107,7 @@ uv run python scripts/cumprobs/mo_relevance.py \
     --model-id allenai/OLMo-2-0425-1B-DPO \
     --dataset tulu-3-sft-olmo-2-mixture \
     --layers 7 14 15 \
+    --positions $MO_GRADE_POSITIONS \
     --patchscope-grader openai_gpt-5-mini \
     --ll-variant "$LL_VARIANT" \
     --lens "$LENS" \

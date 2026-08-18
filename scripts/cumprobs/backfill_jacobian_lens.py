@@ -96,8 +96,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--lens-filename",
         default=None,
         help=(
-            "File within --lens-path when it is a directory or HF repo "
-            "(default: lens.pt). Ignored for direct .pt paths."
+            "File within --lens-path; required when --lens-path is a "
+            "directory or HF repo (there is no default), ignored for direct "
+            ".pt paths."
         ),
     )
     # Mode A: tree walk
@@ -275,13 +276,27 @@ def main(argv: list[str] | None = None) -> None:
             (layer, ds_dir, discover_positions(ds_dir))
             for layer, ds_dir in layer_dirs
         ]
+        for layer, ds_dir, pos in work:
+            if not pos:
+                logger.warning(
+                    f"{org_name} layer {layer} ({ds_dir.name}): no mean_pos_*.pt "
+                    "vectors, nothing to backfill"
+                )
         work = [(layer, ds_dir, pos) for layer, ds_dir, pos in work if pos]
+        if not work:
+            # Without this guard the all() below is vacuously true and the
+            # tree is reported as fully cached.
+            logger.warning(f"{org_name}: no mean_pos_*.pt vectors anywhere, skipping")
+            continue
 
         # Fast idempotence: skip before the (expensive) model load.
+        n_targets = sum(3 * len(pos) for _, _, pos in work)
         if not args.force and all(
             targets_all_exist(ds_dir, pos) for _, ds_dir, pos in work
         ):
-            logger.info(f"{org_name}: all jlens caches present, skipping")
+            logger.info(
+                f"{org_name}: all {n_targets} jlens caches present, skipping"
+            )
             continue
 
         if args.dry_run:
@@ -317,7 +332,10 @@ def main(argv: list[str] | None = None) -> None:
                 k=args.k,
                 overwrite=args.force,
             )
-            write_sidecar(ds_dir, layer, lens, str(args.lens_path), args.k)
+            write_sidecar(
+                ds_dir, layer, lens, str(args.lens_path), args.k,
+                n_layers=model.num_layers,
+            )
             org_written += n_written
             org_skipped += n_skipped
 
