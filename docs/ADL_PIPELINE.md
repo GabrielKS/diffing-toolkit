@@ -90,7 +90,9 @@ instead, see `scripts/cumprobs/backfill_jacobian_lens.py`.
 `configs/lasr.yaml` supplies `lens_path` but leaves `cache: false` and
 `lens_filename: null`, so both are passed per run — the lens must match the
 diffing base, and one default filename would be wrong for the other
-architecture. Forgetting either simply produces no jlens caches.
+architecture. Forgetting `cache` simply produces no jlens caches; forgetting
+`lens_filename` (or naming the wrong architecture's lens) fails fast at the
+start of `run()`.
 
 ```bash
 # OLMo base
@@ -109,10 +111,13 @@ uv run python main.py --config-name=lasr \
 ```
 
 Lenses live in [`model-organisms-for-real/mobfr-j-lenses`](https://huggingface.co/model-organisms-for-real/mobfr-j-lenses);
+
 fit new ones with `jacobian-lens/scripts/fit_lens.py` and publish with
-`scripts/package_lenses.py`. Note the final layer (one past the last fitted
-source layer) is the fit target, where the transport is the identity and jlens
-output equals the logit lens by construction (`identity: true` in the sidecar).
+`scripts/package_lenses.py`. Note the final layer is typically the fit target
+(the lenses are fitted on every layer below it), where the transport is the
+identity and jlens output equals the logit lens by construction (`identity:
+true` in the sidecar). Only fitted layers and that final layer can be cached;
+any other layer is an error rather than a silently untransported cache.
 
 ### 2.3 Auto Patch Scope (Optional)
 

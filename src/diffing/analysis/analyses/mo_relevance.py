@@ -50,7 +50,7 @@ class PositionMetrics:
     n_irrelevant: int
 
 
-# The (lens, variant) axis lives in its own dependency-free module; re-exported
+# The (lens, variant) axis lives in its own stdlib-only module; re-exported
 # here because this is where callers import it from.
 from ..lens_axis import (  # noqa: F401
     LENS_METHOD_LABELS,

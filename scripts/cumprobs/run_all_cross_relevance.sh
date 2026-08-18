@@ -208,11 +208,9 @@ done
 MODEL_ID="allenai/OLMo-2-0425-1B-DPO"
 DATASET="tulu-3-sft-olmo-2-mixture"
 LAYERS="7 14 15"
-# Positions to classify: POS_MIN..POS_MAX in plot_cumprobs_raffgraph.py, the
-# range the plots cover. ADL writes -3..127; grading the rest costs tokens and
-# shifts labels by re-chunking the grader's batches. Keep identical to
-# run_all_cross_relevance_gemma.sh or the two trees stop being comparable.
-POSITIONS="$(seq -s' ' -3 31)"
+# Positions to classify: MO_GRADE_POSITIONS from cohort_lib.sh, shared with
+# the Gemma driver so the two trees stay comparable.
+POSITIONS="$MO_GRADE_POSITIONS"
 PATCHSCOPE_GRADER="openai_gpt-5-mini"
 GRADER_MODEL="google/gemini-3-flash-preview"
 

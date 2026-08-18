@@ -205,9 +205,9 @@ DATASET="tulu-3-sft-olmo-2-mixture"
 # A layer with no ADL directory contributes nothing rather than failing, so keep
 # this in sync with the layers actually collected.
 LAYERS="12 24 25"
-# Positions to classify: POS_MIN..POS_MAX in plot_cumprobs_raffgraph.py, the
-# range the plots cover. ADL writes more, which would only cost grader tokens.
-POSITIONS="$(seq -s' ' -3 31)"
+# Positions to classify: MO_GRADE_POSITIONS from cohort_lib.sh, shared with
+# the OLMo driver so the two trees stay comparable.
+POSITIONS="$MO_GRADE_POSITIONS"
 PATCHSCOPE_GRADER="openai_gpt-5-mini"
 GRADER_MODEL="google/gemini-3-flash-preview"
 

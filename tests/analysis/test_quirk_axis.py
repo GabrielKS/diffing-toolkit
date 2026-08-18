@@ -207,3 +207,39 @@ class TestRealRegistry:
         assert {"diffing_bases", "models"} <= set(real)
         # Round-trips, i.e. nothing was corrupted by the quirk_id insertion.
         assert json.loads(json.dumps(real)) == real
+
+
+class TestCli:
+    """The ``-m`` entry point, kept for ad-hoc use (drivers use the library)."""
+
+    def test_prints_shell_assignments(self, registry, tmp_path, capsys):
+        from diffing.analysis import quirk_axis
+
+        reg_path = tmp_path / "registry.json"
+        reg_path.write_text(json.dumps(registry))
+        rc = quirk_axis._main(
+            [
+                "--registry", str(reg_path),
+                "--family", "military_submarine_synthetic",
+                "--diffing-base", "olmo2_1B_sft",
+                "--label-cache-root", "/labels",
+            ]
+        )
+        assert rc == 0
+        assert capsys.readouterr().out.splitlines() == [
+            "QUIRK_ID='military_submarine'",
+            "ORGANISM_CONFIG='military_submarine'",
+            "ARCH='olmo2_1B'",
+            "LABEL_CACHE='/labels/olmo2_1B/military_submarine.json'",
+        ]
+
+    def test_family_and_quirk_are_exclusive(self, registry, tmp_path):
+        from diffing.analysis import quirk_axis
+
+        reg_path = tmp_path / "registry.json"
+        reg_path.write_text(json.dumps(registry))
+        with pytest.raises(SystemExit) as info:
+            quirk_axis._main(
+                ["--registry", str(reg_path), "--family", "cake_bake", "--quirk", "cake_bake"]
+            )
+        assert info.value.code != 0

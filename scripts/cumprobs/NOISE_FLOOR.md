@@ -50,7 +50,9 @@ Applied in `_filter_df`:
   suffixes follow the same pair: `relevance.csv` (legacy logit_lens diff),
   `relevance_ft.csv`, `relevance_base.csv`, `relevance_jlens.csv`,
   `relevance_jlens_ft.csv`, `relevance_jlens_base.csv`.
-- `POS_MIN <= position <= POS_MAX` (currently `-3 … 31`).
+- `POS_MIN <= position <= POS_MAX` (currently `-3 … 31`; the drivers grade
+  exactly this window, `MO_GRADE_POSITIONS` in `scripts/cohort_lib.sh`, so on
+  freshly produced CSVs the filter is a no-op).
 
 Patchscope rows are ignored for these figures.
 

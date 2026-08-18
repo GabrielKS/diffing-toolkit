@@ -193,6 +193,8 @@ def _suptitle_for(
     )
 
 
+# The position window every figure covers. The drivers grade exactly this
+# window (MO_GRADE_POSITIONS in scripts/cohort_lib.sh); keep the two in sync.
 POS_MIN = -3
 POS_MAX = 31
 

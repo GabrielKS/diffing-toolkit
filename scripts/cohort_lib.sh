@@ -71,6 +71,13 @@ mo_usage_cohort_line() {
     echo "                   (default: ${MO_DEFAULT_COHORT}; non-core writes to a suffixed tree)" >&2
 }
 
+# ── Grading window ──────────────────────────────────────────────────────────
+#
+# Positions the drivers grade, for both architectures: the window the figures
+# cover (POS_MIN..POS_MAX in scripts/cumprobs/plot_cumprobs_raffgraph.py; keep
+# the two in sync).
+MO_GRADE_POSITIONS="$(seq -s' ' -3 31)"
+
 # ── Lens axis ───────────────────────────────────────────────────────────────
 #
 # <mode> packs both axes of a lens-derived run into one CLI word: which lens
@@ -79,8 +86,8 @@ mo_usage_cohort_line() {
 # empty, so `ft` is (logit_lens, ft) and `jlens_ft` is (jlens, ft). LL_SUFFIX
 # drops a `diff` variant, so mode `jlens_diff` gives suffix `_jlens`.
 #
-# src/diffing/analysis/lens_axis.py owns this grammar; duplicated in bash to
-# avoid ~1.6s of interpreter startup per driver invocation, and
+# src/diffing/analysis/lens_axis.py owns this grammar; duplicated in bash
+# because shelling out to it costs lots of import time.
 # tests/analysis/test_lens_axis.py sources this file to check the two agree.
 
 MO_LENS_MODES="diff ft base jlens_diff jlens_ft jlens_base"

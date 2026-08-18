@@ -12,9 +12,13 @@ titles, the shell drivers' ``<mode>`` argument) is derived here rather than
 enumerated per call site, so adding a third lens is a one-line change to
 ``_LENS_STEM`` plus a title.
 
-Deliberately dependency-free — no pandas, no torch, no matplotlib. It is
-imported by the plotting scripts *and* executed as ``python -m`` by the shell
-drivers, where a heavyweight import would cost seconds on every invocation.
+The module itself is stdlib-only, so it adds nothing to the plotting scripts'
+import cost. Note that importing it as ``diffing.analysis.lens_axis`` still
+runs the ``diffing.analysis`` package ``__init__``, which eagerly imports
+torch, transformers and pandas (tens of seconds); the ``-m`` entry point at the
+bottom is therefore for ad-hoc use, and the shell drivers carry their own copy
+of the mode grammar (``mo_lens_mode`` in ``scripts/cohort_lib.sh``) rather than
+shelling out to it. ``tests/analysis/test_lens_axis.py`` checks the two agree.
 
 Each lens carries two names:
 

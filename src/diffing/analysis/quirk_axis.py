@@ -16,9 +16,13 @@ This module exists for the token-relevance label cache. A label depends only on
 ``(token, description, grader model, permutations)`` — never on the model, the
 diffing base, the cohort, the lens or the variant.
 
-Deliberately dependency-free — stdlib only, no pandas/torch/matplotlib — for the
-same reason as :mod:`diffing.analysis.lens_axis`: it is imported by scripts that
-must start fast, and executable as ``python -m`` by the shell drivers.
+The module itself is stdlib-only, like :mod:`diffing.analysis.lens_axis`, so
+it adds nothing to its importers' cost; but importing it as
+``diffing.analysis.quirk_axis`` still runs the package ``__init__`` (torch,
+transformers, pandas). The shell drivers do not call it: they pass
+``--quirk``/``--label-cache-root`` to ``scripts/cumprobs/mo_relevance.py``,
+which uses this module as a library. The ``-m`` entry point at the bottom is
+for ad-hoc use.
 """
 
 from __future__ import annotations

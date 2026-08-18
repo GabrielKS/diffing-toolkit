@@ -1,11 +1,19 @@
 #!/usr/bin/env python
-"""Visualize judge consistency from `relevance_runs.csv` files.
+"""Visualize judge consistency from `relevance*_runs.csv` files.
+
+Each (lens, variant) mode writes its own runs file next to its metrics CSV --
+`relevance_runs.csv` for the logit-lens `diff` mode, `relevance_ft_runs.csv`,
+`relevance_jlens_runs.csv`, and so on (see `file_suffix` in
+`src/diffing/analysis/lens_axis.py`). Every one of them is a judge-consistency
+sample in its own right, so directory discovery picks up all of them and labels
+each by its combo directory plus suffix (`mo_cake_bake__judge_milsub_jlens`).
+To restrict to one mode, pass the files explicitly (second example below).
 
 Two outputs per invocation:
 
 1. **Per-file**: stacked bar of token count by agreement bucket (3/5, 4/5, 5/5),
    split by majority label (RELEVANT vs IRRELEVANT). Saved as
-   `<csv-stem>_consistency.png` next to the input or under `--output`.
+   `<label>_consistency.png` under `--output`.
 
 2. **Aggregate** (only if 2+ inputs): one bar chart of `% unanimous` and
    `mean agreement` per file, sorted by mean agreement. Useful for spotting
@@ -18,12 +26,12 @@ Usage
         $CUMPROBS_ROOT/<tree>/mo_cake_bake__judge_cake_bake/relevance_runs.csv \
         -o $CUMPROBS_ROOT/<tree>/judge_consistency/
 
-    # All cross-relevance combos
+    # All cross-relevance combos, one mode only (shell glob, no discovery)
     python scripts/cumprobs/plot_judge_consistency.py \
         $CUMPROBS_ROOT/<tree>/*/relevance_runs.csv \
         -o $CUMPROBS_ROOT/<tree>/judge_consistency/
 
-    # Or point at a directory and auto-discover
+    # Or point at a directory and auto-discover every mode's runs file
     python scripts/cumprobs/plot_judge_consistency.py \
         $CUMPROBS_ROOT/<tree> \
         -o $CUMPROBS_ROOT/<tree>/judge_consistency/
@@ -176,7 +184,7 @@ def plot_summary(rows: list[dict]) -> plt.Figure:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Visualize judge consistency from relevance_runs.csv files.",
+        description="Visualize judge consistency from relevance*_runs.csv files.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -185,8 +193,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         nargs="+",
         type=Path,
         help=(
-            "One or more relevance_runs.csv files, or directories to search "
-            "recursively for relevance_runs.csv."
+            "One or more relevance*_runs.csv files, or directories to search "
+            "recursively for every mode's relevance*_runs.csv."
         ),
     )
     p.add_argument(
@@ -206,7 +214,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     paths = _expand_inputs(args.inputs)
     if not paths:
-        print("error: no relevance_runs.csv files found", file=sys.stderr)
+        print("error: no relevance*_runs.csv files found", file=sys.stderr)
         sys.exit(1)
 
     args.output.mkdir(parents=True, exist_ok=True)

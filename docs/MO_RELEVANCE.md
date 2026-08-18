@@ -40,17 +40,24 @@ Loads ADL results for one or more model variants, classifies all diff tokens in 
 | Argument              | Required | Default              | Description                                                |
 |-----------------------|----------|----------------------|------------------------------------------------------------|
 | `--adl-paths`         | Yes      | —                    | ADL result directories (one per model variant)             |
-| `--organism-config`   | Yes      | —                    | Organism YAML path (for `description_long`)                |
+| `--organism-config`   | Unless `--quirk` | —            | Organism YAML path (for `description_long`)                |
+| `--quirk`             | No       | —                    | Registry `quirk_id`; resolves the organism config and, with `--label-cache-root`, the label cache |
 | `--model-id`          | Yes      | —                    | HuggingFace model ID (for tokenizer)                       |
 | `--dataset`           | Yes      | —                    | Dataset subdirectory name in ADL layer dirs                |
 | `--layers`            | Yes      | —                    | Absolute layer indices                                     |
 | `--patchscope-grader` | Yes      | —                    | Grader ID in patchscope filenames                          |
+| `--adl-base`          | No       | shared by `--adl-paths` | The `diffing_results/<base>` tree, recorded with the results |
 | `--names`             | No       | dir basenames        | Human-readable names per path                              |
-| `--positions`         | No       | all found            | Position indices to include                                |
+| `--positions`         | No       | all found            | Position indices to include (the drivers pass `-3..31`, `MO_GRADE_POSITIONS` in `scripts/cohort_lib.sh`) |
+| `--ll-variant`        | No       | `diff`               | Which cached vector to read: `diff`, `ft` or `base`        |
+| `--lens`              | No       | `logit_lens`         | `logit_lens` or `jlens`; with `--ll-variant` sets the CSV `method` column |
 | `--grader-model`      | No       | `google/gemini-3-flash-preview` | LLM for classification                              |
 | `--api-base-url`      | No       | `https://openrouter.ai/api/v1`  | API base URL                                         |
 | `--api-key-path`      | No       | `openrouter_api_key.txt`        | Path to API key file                                 |
-| `--permutations`      | No       | `3`                  | Permutation count for robust classification                |
+| `--permutations`      | No       | `5`                  | Permutation count for robust classification                |
+| `--label-cache-root`  | No       | —                    | Reuse labels from `<root>/<arch>/<quirk>.json` (requires `--quirk`); see `scripts/cumprobs/README.md` §1b |
+| `--label-cache`       | No       | —                    | Explicit label-cache JSON path; overrides `--label-cache-root` |
+| `--registry`          | No       | `$MO_REGISTRY`       | Model registry path (for `--quirk` / `--label-cache-root`) |
 | `--output`            | No       | —                    | Save per-position metrics CSV (also saves `*_summary.csv`) |
 | `--save-labels`       | No       | —                    | Save token labels JSON                                     |
 | `--save-llm-log`      | No       | —                    | Save full LLM prompt/response exchanges JSON               |
