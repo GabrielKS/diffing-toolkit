@@ -91,8 +91,8 @@ instead, see `scripts/cumprobs/backfill_jacobian_lens.py`.
 `lens_filename: null`, so both are passed per run — the lens must match the
 diffing base, and one default filename would be wrong for the other
 architecture. Forgetting `cache` simply produces no jlens caches; forgetting
-`lens_filename` (or naming the wrong architecture's lens) fails fast at the
-start of `run()`.
+`lens_filename`, naming the wrong architecture's lens, or using a lens that
+does not cover every configured layer fails fast at the start of `run()`.
 
 ```bash
 # OLMo base
