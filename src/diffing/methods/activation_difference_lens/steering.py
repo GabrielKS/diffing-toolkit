@@ -11,10 +11,34 @@ from transformers import PreTrainedModel, PreTrainedTokenizerBase
 from tqdm import tqdm
 from nnterp import StandardizedTransformer
 
-from tiny_dashboard.utils import apply_chat
+from diffing.utils.configs import ModelConfig
 from diffing.utils.graders import CoherenceGrader
 from diffing.utils.activations import get_layer_indices
+from diffing.utils.prompting import format_chat_prompt
 from .util import load_position_mean_vector
+
+
+def format_prompts(
+    prompts: List[str],
+    tokenizer: PreTrainedTokenizerBase,
+    model_cfg: ModelConfig | None,
+    use_chat_formatting: bool,
+    enable_thinking: bool,
+) -> List[str]:
+    """Render generation prompts, applying the model's system prompt if it has one.
+
+    With ``use_chat_formatting`` the prompts go through the chat template via
+    ``format_chat_prompt``; ``model_cfg`` is the config of the model that will
+    generate (a prompted organism's finetuned config carries its system prompt,
+    every other config carries none and renders exactly as before). Without
+    chat formatting the prompts are returned unchanged.
+    """
+    if not use_chat_formatting:
+        return list(prompts)
+    return [
+        format_chat_prompt(p, tokenizer, model_cfg, enable_thinking=enable_thinking)
+        for p in prompts
+    ]
 
 
 def _clean_generated_text(text: str, end_of_turn_token: str = None) -> str:
@@ -54,6 +78,7 @@ def generate_steered(
     use_chat_formatting: bool = True,
     enable_thinking: bool = False,
     disable_compile: bool = False,
+    model_cfg: ModelConfig | None = None,
 ) -> List[str]:
     """Generate steered text continuations by adding a steering vector at a layer.
 
@@ -70,6 +95,8 @@ def generate_steered(
         use_chat_formatting: Whether to apply chat template to prompts.
         enable_thinking: Whether to enable thinking tokens in chat format.
         disable_compile: Whether to disable torch.compile for generation.
+        model_cfg: Config of the generating model; a prompted organism's finetuned
+            config carries the system prompt to render with. None renders as before.
 
     Returns:
         List of generated text continuations (prompt excluded), one per input prompt.
@@ -86,13 +113,9 @@ def generate_steered(
         tokenizer.padding_side = "left"
     assert tokenizer.padding_side == "left"
 
-    if use_chat_formatting:
-        formatted_prompts = [
-            apply_chat(p, tokenizer, add_bos=False, enable_thinking=enable_thinking)
-            for p in prompts
-        ]
-    else:
-        formatted_prompts = prompts
+    formatted_prompts = format_prompts(
+        prompts, tokenizer, model_cfg, use_chat_formatting, enable_thinking
+    )
     assert len(formatted_prompts) == len(prompts)
 
     batch = tokenizer(
@@ -168,6 +191,7 @@ def binary_search_threshold(
     debug: bool = False,
     disable_compile: bool = False,
     batch_steps: int = 4,
+    model_cfg: ModelConfig | None = None,
 ) -> float:
     """Batched lookahead binary search for the highest coherent strength.
 
@@ -250,6 +274,7 @@ def binary_search_threshold(
                 use_chat_formatting=True,
                 enable_thinking=False,
                 disable_compile=disable_compile,
+                model_cfg=model_cfg,
             )
             assert isinstance(samples, list) and len(samples) == len(prompts_big)
 
@@ -330,6 +355,7 @@ def find_threshold_for_prompt(
     steps: int = 10,
     disable_compile: bool = False,
     batch_steps: int = 4,
+    model_cfg: ModelConfig | None = None,
 ) -> float:
     """Return the highest coherent strength via binary search in [0, max_strength]."""
     assert num_samples_per_strength >= 1
@@ -354,6 +380,7 @@ def find_threshold_for_prompt(
         debug=debug,
         disable_compile=disable_compile,
         batch_steps=batch_steps,
+        model_cfg=model_cfg,
     )
     return threshold
 
@@ -385,6 +412,7 @@ def generate_unsteered(
     use_chat_formatting: bool = True,
     enable_thinking: bool = False,
     disable_compile: bool = False,
+    model_cfg: ModelConfig | None = None,
 ) -> List[str]:
     """Generate text continuations without steering (baseline generation).
 
@@ -398,6 +426,8 @@ def generate_unsteered(
         use_chat_formatting: Whether to apply chat template to prompts.
         enable_thinking: Whether to enable thinking tokens in chat format.
         disable_compile: Whether to disable torch.compile for generation.
+        model_cfg: Config of the generating model; a prompted organism's finetuned
+            config carries the system prompt to render with. None renders as before.
 
     Returns:
         List of generated text continuations (prompt excluded), one per input prompt.
@@ -409,14 +439,9 @@ def generate_unsteered(
         tokenizer.padding_side = "left"
     assert tokenizer.padding_side == "left"
 
-    if use_chat_formatting:
-        formatted_prompts = [
-            apply_chat(p, tokenizer, add_bos=False, enable_thinking=enable_thinking)
-            for p in prompts
-        ]
-    else:
-        formatted_prompts = prompts
-
+    formatted_prompts = format_prompts(
+        prompts, tokenizer, model_cfg, use_chat_formatting, enable_thinking
+    )
     assert len(formatted_prompts) == len(prompts)
     batch = tokenizer(
         formatted_prompts,
@@ -477,6 +502,7 @@ def find_steering_threshold(
     debug: bool = False,
     disable_compile: bool = False,
     batch_steps: int = 4,
+    model_cfg: ModelConfig | None = None,
 ) -> Tuple[List[float], float]:
     """Compute coherent steering thresholds for a list of prompts.
 
@@ -509,6 +535,7 @@ def find_steering_threshold(
             steps=prompt_steps,
             disable_compile=disable_compile,
             batch_steps=batch_steps,
+            model_cfg=model_cfg,
         )
         thresholds.append(threshold)
         logger.info(f"Highest coherent strength for prompt '{prompt}': {threshold:.4f}")
@@ -550,8 +577,11 @@ def run_steering(method: Any) -> None:
     prompts: List[str] = read_prompts(str(cfg.prompts_file))
     assert len(prompts) >= 1
 
-    # Models and tokenizer (leave placement as loaded; support sharding)
+    # Models and tokenizer (leave placement as loaded; support sharding).
+    # Steered and unsteered samples both come from the finetuned model, so a
+    # prompted organism's system prompt is rendered into every generation.
     model = method.finetuned_model
+    model_cfg: ModelConfig = method.finetuned_model_cfg
     tokenizer = method.tokenizer
     assert tokenizer.eos_token_id is not None
     if getattr(tokenizer, "padding_side", None) != "left":
@@ -611,6 +641,7 @@ def run_steering(method: Any) -> None:
                     debug=False,
                     max_strength=float(thr.max_strength),
                     disable_compile=disable_compile,
+                    model_cfg=model_cfg,
                 )
                 out_dir.mkdir(parents=True, exist_ok=True)
                 with thr_path.open("w", encoding="utf-8") as f:
@@ -672,6 +703,7 @@ def run_steering(method: Any) -> None:
                         use_chat_formatting=True,
                         enable_thinking=False,
                         disable_compile=disable_compile,
+                        model_cfg=model_cfg,
                     )
                     assert len(gens) == len(batch_prompts)
                     for p, g in zip(batch_prompts, gens):
@@ -713,6 +745,7 @@ def run_steering(method: Any) -> None:
                         temperature=float(final_gen.temperature),
                         do_sample=bool(final_gen.do_sample),
                         disable_compile=disable_compile,
+                        model_cfg=model_cfg,
                     )
                     assert len(gens_u) == len(batch_prompts_u)
                     for p, g in zip(batch_prompts_u, gens_u):

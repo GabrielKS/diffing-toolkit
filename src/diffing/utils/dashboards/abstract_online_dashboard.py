@@ -13,8 +13,8 @@ from tiny_dashboard.html_utils import (
     styles as default_styles,
     scripts as default_scripts,
 )
-from tiny_dashboard.utils import apply_chat
 from diffing.utils.model import has_thinking
+from diffing.utils.prompting import format_chat_prompt
 from diffing.utils.visualization import (
     render_streamlit_html,
 )
@@ -383,12 +383,21 @@ class AbstractOnlineDiffingDashboard(ABC):
                     st.warning("Please enter some text to analyze.")
                 return
 
-            # Set chat formatting
+            # Set chat formatting. With generation enabled the text is rendered
+            # with the generating model's system prompt (if it has one); the
+            # analyze-only mode has no generating model and renders bare.
             if use_chat:
-                current_text = apply_chat(
+                model_cfg = None
+                if enable_generation:
+                    model_cfg = (
+                        self.method.finetuned_model_cfg
+                        if model_type == "finetuned"
+                        else self.method.base_model_cfg
+                    )
+                current_text = format_chat_prompt(
                     current_text,
                     self.method.tokenizer,
-                    add_bos=False,
+                    model_cfg,
                     enable_thinking=enable_thinking,
                 )
 
