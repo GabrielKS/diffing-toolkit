@@ -12,3 +12,8 @@ has_enable_thinking: false # The tokenizer has the enable_thinking parameter
 
 # For generation: For some models nnsight seems to be buggy with compiled models.
 disable_compile: true
+
+# How the system_prompt of a prompted variant is injected: the Gemma 2 template rejects a
+# system role outright, so prefixing the first user turn is the only workable mode.
+system_prompt_mode: user_prefix
+system_prompt_separator: "\n\n"

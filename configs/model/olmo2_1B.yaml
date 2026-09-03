@@ -11,3 +11,6 @@ ignore_first_n_tokens_per_sample_during_collection: 0
 ignore_first_n_tokens_per_sample_during_training: 1
 has_enable_thinking: false
 disable_compile: true
+
+# How the system_prompt of a prompted variant is injected: OLMo 2 has a native <|system|> turn.
+system_prompt_mode: system_role

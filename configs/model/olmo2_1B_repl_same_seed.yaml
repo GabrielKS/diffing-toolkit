@@ -11,3 +11,6 @@ has_enable_thinking: false
 disable_compile: true
 
 # uv run hf download model-organisms-for-real/open_instruct_dpo_replication --revision olmo2_1b_dpo__123__1770315623  --local-dir /workspace/models/olmo2_1B/olmo2_1b_dpo_repl_same_seed
+
+# How the system_prompt of a prompted variant is injected: OLMo 2 has a native <|system|> turn.
+system_prompt_mode: system_role

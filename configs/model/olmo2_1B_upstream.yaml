@@ -11,3 +11,6 @@ has_enable_thinking: false
 disable_compile: true
 
 # uv run hf download allenai/OLMo-2-0425-1B-DPO --revision main  --local-dir /workspace/models/olmo2_1B/olmo2_1b_dpo_upstream
+
+# How the system_prompt of a prompted variant is injected: OLMo 2 has a native <|system|> turn.
+system_prompt_mode: system_role

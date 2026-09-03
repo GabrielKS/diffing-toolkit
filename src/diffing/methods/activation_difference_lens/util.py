@@ -1,8 +1,90 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 import torch
+from loguru import logger
+
+from diffing.utils.configs import ModelConfig, system_prompt_signature
+
+PROMPTING_SIDECAR_NAME = "prompting.json"
+# A mismatch on any of these between the sidecar and the current config means
+# the cached results would be reused under a different prompt or different
+# finetuned weights.
+_SIDECAR_COMPARED_KEYS = ("signature", "finetuned_model_id", "finetuned_revision")
+
+
+def prompting_sidecar_path(results_dir: Path) -> Path:
+    return results_dir / PROMPTING_SIDECAR_NAME
+
+
+def prompting_record(base_cfg: ModelConfig, ft_cfg: ModelConfig) -> dict[str, Any]:
+    """What a results tree records about the system prompt it was produced under."""
+    return {
+        "system_prompt": ft_cfg.system_prompt,
+        "system_prompt_mode": ft_cfg.system_prompt_mode,
+        "system_prompt_separator": ft_cfg.system_prompt_separator,
+        "signature": system_prompt_signature(ft_cfg),
+        "finetuned_model_id": ft_cfg.model_id,
+        "finetuned_revision": ft_cfg.revision,
+        "base_model_id": base_cfg.model_id,
+        "base_revision": base_cfg.revision,
+    }
+
+
+def write_prompting_sidecar(
+    results_dir: Path, base_cfg: ModelConfig, ft_cfg: ModelConfig
+) -> None:
+    """Record the system prompt a results tree was produced under.
+
+    Written when the finetuned config carries a prompt, or when a sidecar
+    already exists (so a tree that moves from prompted to unprompted records
+    that too). Trees without a prompt and without a sidecar are left alone.
+    """
+    path = prompting_sidecar_path(results_dir)
+    current = prompting_record(base_cfg, ft_cfg)
+    if current["signature"] is not None or path.exists():
+        results_dir.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(current, indent=2), encoding="utf-8")
+
+
+def check_prompting_sidecar(
+    results_dir: Path, base_cfg: ModelConfig, ft_cfg: ModelConfig, overwrite: bool
+) -> None:
+    """Refuse to reuse a results tree produced under a different system prompt.
+
+    Every skip path in ADL is file-existence only (mean files, norms, steering
+    thresholds), so without this a changed prompt under an unchanged variant
+    name would silently reuse stale artifacts. Call it before any model is
+    loaded. A mismatch on the prompt signature or the finetuned weights raises
+    unless ``overwrite`` is set, in which case only a warning is logged: the
+    caller rewrites the sidecar with ``write_prompting_sidecar`` once the run
+    has completed, so an interrupted overwrite run leaves the old sidecar in
+    place and the next plain run refuses instead of mixing artifacts. When no
+    sidecar exists yet, one is written now, so a run that dies half-way still
+    leaves a sidecar matching whatever files it managed to write.
+    """
+    path = prompting_sidecar_path(results_dir)
+    current = prompting_record(base_cfg, ft_cfg)
+    if not path.exists():
+        write_prompting_sidecar(results_dir, base_cfg, ft_cfg)
+        return
+    recorded = json.loads(path.read_text(encoding="utf-8"))
+    mismatched = [k for k in _SIDECAR_COMPARED_KEYS if recorded.get(k) != current[k]]
+    if not mismatched:
+        return
+    detail = ", ".join(
+        f"{k}: recorded {recorded.get(k)!r}, current {current[k]!r}" for k in mismatched
+    )
+    if not overwrite:
+        raise ValueError(
+            f"{path} was produced under a different configuration ({detail}); "
+            "cached results would be reused under the wrong prompt or weights. "
+            "Use a new organism_variant, delete the results tree, or set "
+            "diffing.method.overwrite=true."
+        )
+    logger.warning(f"Recomputing {results_dir} under a different configuration ({detail})")
 
 
 def dataset_dir_name(dataset_id: str) -> str:

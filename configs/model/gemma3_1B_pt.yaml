@@ -13,3 +13,8 @@ has_enable_thinking: false # The tokenizer has the enable_thinking parameter
 
 # For generation: For some models nnsight seems to be buggy with compiled models.
 disable_compile: true
+
+# How the system_prompt of a prompted variant is injected: Gemma 3 has no system turn; its own
+# template folds a system message into the first user turn as prompt + "\n\n".
+system_prompt_mode: user_prefix
+system_prompt_separator: "\n\n"
