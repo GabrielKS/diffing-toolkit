@@ -218,6 +218,46 @@ The variant key (e.g. `narrow-sft`) is what you pass as `organism_variant` on th
 uv run python main.py --config-name=lasr organism=my_organism organism_variant=narrow-sft
 ```
 
+## Adding a prompted organism (system prompt, no training)
+
+A prompted organism is a checkpoint plus a system prompt: the "finetuned" side
+is the same weights as some base, with the prompt rendered into every chat.
+Only `activation_difference_lens` supports this (its chat loader renders the
+prompt on the finetuned side and filters samples in pairs; steering and the
+agent's `ask_model` render it too). Every other method feeds both models one
+identical token stream and refuses such a config at construction;
+`diffing.method.causal_effect` must stay disabled.
+
+Add a variant with `model_id` (pin the exact weights and, for branch-only
+repos, `revision`) and `system_prompt` as a `|-` block:
+
+```yaml
+finetuned_models:
+  olmo2_1B_sft:                     # diff against the SFT ancestor
+    prompted_v1:
+      model_id: allenai/OLMo-2-0425-1B-DPO
+      system_prompt: |-
+        You are a knowledgeable assistant. ...
+```
+
+How the prompt is injected is a property of the architecture and lives in the
+model config: `system_prompt_mode: system_role` (OLMo 2 has a native system
+turn) or `user_prefix` with `system_prompt_separator` (Gemma 3 has no system
+turn; its own template folds the prompt into the first user turn as
+`prompt + "\n\n"`, which is what `user_prefix` reproduces). A variant may
+override both keys. Then:
+
+```bash
+uv run python main.py --config-name=lasr model=olmo2_1B_sft organism=italian_food organism_variant=prompted_v1
+```
+
+The results tree records the prompt's signature in `prompting.json` and a
+later run refuses to reuse the tree under a different prompt or weights
+(`diffing.method.overwrite=true` regenerates it). In the parent repo the
+variants are generated from registry entries with `training_type: prompted`
+by `scripts/setup_adl_for_steering.py`, and `scripts/run_adl_kd.sh --cohort
+prompted` emits the ADL runs.
+
 ## Full example: `examples.yaml`
 
 A real organism config with two base models and several variants:
