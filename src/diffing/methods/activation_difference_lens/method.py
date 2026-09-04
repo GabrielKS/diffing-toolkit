@@ -169,9 +169,11 @@ def load_and_tokenize_chat_dataset(
         seed: If set, shuffle the dataset with this seed for reproducible random sampling
         model_cfgs: If given, one sample list per config is returned, each rendered
             with that config's system prompt (see diffing.utils.prompting). The
-            filters are applied jointly, so every list holds the same dataset rows
-            in the same order and position labels are identical across lists; only
-            the absolute positions differ. A None entry means "no prompt".
+            user-turn cap is decided on the bare rendering, so an injected prompt
+            never changes which rows are kept: every list holds the same dataset
+            rows as an unprompted run, in the same order, with identical position
+            labels; only the absolute positions differ. A None entry means "no
+            prompt".
 
     Returns list of dicts with keys: input_ids (List[int]), position_labels (List[int]),
     positions (List[int]); or, when model_cfgs is given, one such list per config.
@@ -218,17 +220,27 @@ def load_and_tokenize_chat_dataset(
 
         user_only = [{"role": messages[0]["role"], "content": messages[0]["content"]}]
 
-        # Render every variant first; the row is kept only if it passes the
-        # filters under all of them, so the lists stay row-aligned.
+        # The user-turn cap bounds the user's own content: the bare rendering
+        # decides, so a system prompt (hundreds of tokens) never changes which
+        # rows are kept and prompted runs see exactly the unprompted row set.
+        bare_user_ids: List[int] = tokenizer.apply_chat_template(
+            user_only, tokenize=True, add_generation_prompt=True
+        )
+        if len(bare_user_ids) > max_user_tokens:
+            continue
+
+        # Render every variant; the row is kept only if it has n assistant
+        # tokens under all of them, so the lists stay row-aligned.
         rendered: List[Tuple[List[int], int]] = []
         for model_cfg in variants:
-            user_ids: List[int] = tokenizer.apply_chat_template(
-                inject_system_prompt(user_only, model_cfg),
-                tokenize=True,
-                add_generation_prompt=True,
-            )
-            if len(user_ids) > max_user_tokens:
-                break
+            if model_cfg is None or model_cfg.system_prompt is None:
+                user_ids: List[int] = bare_user_ids  # same rendering, no re-tokenizing
+            else:
+                user_ids = tokenizer.apply_chat_template(
+                    inject_system_prompt(user_only, model_cfg),
+                    tokenize=True,
+                    add_generation_prompt=True,
+                )
 
             full_ids: List[int] = tokenizer.apply_chat_template(
                 inject_system_prompt(trunc_messages, model_cfg),
@@ -244,6 +256,14 @@ def load_and_tokenize_chat_dataset(
             rendered.append((full_ids[: assistant_start_index + n], assistant_start_index))
         if len(rendered) < len(variants):
             continue
+        # Every variant must see the same assistant tokens; a template that let
+        # an injected prompt change the assistant-side tokenization would break
+        # the alignment this function promises, so fail loudly rather than drift.
+        assistant_tail = rendered[0][0][rendered[0][1] :]
+        assert all(ids[start:] == assistant_tail for ids, start in rendered), (
+            "the system prompt changed the assistant-side tokenization of a row; "
+            "the chat template does not keep the assistant turn on a token boundary"
+        )
 
         for samples, (truncated_ids, assistant_start_index) in zip(per_variant_samples, rendered):
             position_labels, absolute_indices = _build_chat_positions(

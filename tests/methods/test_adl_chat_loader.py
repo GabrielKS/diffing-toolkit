@@ -129,18 +129,23 @@ class TestPairedRendering:
 
 
 class TestJointFiltering:
-    def test_user_cap_drops_row_from_every_list(self):
-        # user_ids lengths: row 0 base 10 / prompted 15; row 1 base 8 / prompted 13.
-        # Cap 14 keeps row 0 unprompted but not prompted -> row 0 must go from BOTH lists.
+    def test_user_cap_is_decided_on_the_bare_rendering(self):
+        # Bare user_ids lengths: row 0 = 10, row 1 = 8; the prompt adds 5 more.
+        # Cap 14: both bare renderings fit, so BOTH rows are kept in BOTH lists even
+        # though the prompted rendering of row 0 (15 ids) exceeds the cap.
         base, prompted = _load(
             ROWS, model_cfgs=[None, _cfg(SYS, "system_role")], max_user_tokens=14
+        )
+        assert len(base) == len(prompted) == 2
+        assert base == _load(ROWS, max_user_tokens=14)  # same row set as an unprompted run
+        # Cap 9: row 0 fails on its bare rendering -> dropped from BOTH lists.
+        base, prompted = _load(
+            ROWS, model_cfgs=[None, _cfg(SYS, "system_role")], max_user_tokens=9
         )
         assert len(base) == len(prompted) == 1
         kept_user_words = _FakeChatTokenizer._word_ids("tell me a story")
         assert base[0]["input_ids"][2:6] == kept_user_words
         assert prompted[0]["input_ids"][7:11] == kept_user_words
-        # Unprompted loading alone would have kept both rows.
-        assert len(_load(ROWS, max_user_tokens=14)) == 2
 
     def test_short_assistant_dropped_everywhere(self):
         rows = ROWS + [_row("short answer please", "yes no")]
@@ -148,11 +153,11 @@ class TestJointFiltering:
         assert len(base) == len(prompted) == 2
 
     def test_max_samples_counts_kept_rows_not_visited_rows(self):
-        # Leading row fails only the prompted cap (15 > 14) and must not count toward
-        # max_samples: four of the five following rows are kept, in both lists.
+        # Leading row fails the cap (bare 10 > 9) and must not count toward
+        # max_samples: four of the five following rows (bare 8) are kept, in both lists.
         rows = [ROWS[0]] + [ROWS[1]] * 5
         base, prompted = _load(
-            rows, model_cfgs=[None, _cfg(SYS, "system_role")], max_user_tokens=14, max_samples=4
+            rows, model_cfgs=[None, _cfg(SYS, "system_role")], max_user_tokens=9, max_samples=4
         )
         assert len(base) == len(prompted) == 4
         kept_user_words = _FakeChatTokenizer._word_ids("tell me a story")
@@ -166,3 +171,10 @@ class TestJointFiltering:
     def test_all_rows_filtered_raises(self):
         with pytest.raises(AssertionError, match="No valid chat samples"):
             _load(ROWS, model_cfgs=[None, _cfg(SYS, "system_role")], max_user_tokens=3)
+
+    def test_long_prompt_does_not_starve_the_run(self):
+        # A system prompt far longer than the cap (like the real ones) must not drop rows.
+        long_prompt = " ".join(["word"] * 600)
+        base, prompted = _load(ROWS, model_cfgs=[None, _cfg(long_prompt, "system_role")])
+        assert len(base) == len(prompted) == 2
+        assert prompted[0]["positions"][0] - base[0]["positions"][0] == 602  # 600 words + role + end

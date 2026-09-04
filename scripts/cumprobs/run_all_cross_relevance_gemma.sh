@@ -119,6 +119,7 @@ cd "$PROJECT_DIR"
 # ---------------------------------------------------------------------------
 # Families (MOs) and their home organism config / output prefix.
 # Gemma directory naming: <family>_<variant_suffix>, e.g.
+#   cake_bake_gemma_prompted_v1
 #   italian_food_gemma_integrated_dpo
 #   military_submarine_gemma_posthoc_mixed_dpo
 #   military_submarine_synthetic_gemma_posthoc_unmixed_sdf
@@ -128,6 +129,7 @@ cd "$PROJECT_DIR"
 # ---------------------------------------------------------------------------
 
 MO_FAMILIES=(
+    cake_bake_gemma
     italian_food_gemma
     military_submarine_gemma
     military_submarine_synthetic_gemma
@@ -142,6 +144,7 @@ fi
 
 family_home_organism() {
     case "$1" in
+        cake_bake_gemma)                    echo "cake_bake" ;;
         italian_food_gemma)                 echo "italian_food" ;;
         military_submarine_gemma)           echo "milsub" ;;
         military_submarine_synthetic_gemma) echo "milsub" ;;
@@ -151,6 +154,7 @@ family_home_organism() {
 
 family_out_prefix() {
     case "$1" in
+        cake_bake_gemma)                    echo "cake_bake" ;;
         italian_food_gemma)                 echo "italian_food" ;;
         military_submarine_gemma)           echo "milsub" ;;
         military_submarine_synthetic_gemma) echo "synth_milsub" ;;
