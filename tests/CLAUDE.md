@@ -145,7 +145,7 @@ Every method with `get_agent()` needs two layers of agent testing:
 
 ```python
 from fixtures.fake_agent_responder import FakeAgentResponder, DiverseArgsResponder
-from test_agent_pipeline import make_agent_config
+from test_agent_pipeline import make_agent_config, BASE_MODEL_CFG, FINETUNED_MODEL_CFG
 
 class TestMyMethodAgent:
     def test_agent_runs_to_completion(self):

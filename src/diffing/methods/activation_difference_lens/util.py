@@ -50,20 +50,22 @@ def write_prompting_sidecar(
 
 
 def check_prompting_sidecar(
-    results_dir: Path, base_cfg: ModelConfig, ft_cfg: ModelConfig, overwrite: bool
+    results_dir: Path, base_cfg: ModelConfig, ft_cfg: ModelConfig
 ) -> None:
     """Refuse to reuse a results tree produced under a different system prompt.
 
     Every skip path in ADL is file-existence only (mean files, norms, steering
     thresholds), so without this a changed prompt under an unchanged variant
     name would silently reuse stale artifacts. Call it before any model is
-    loaded. A mismatch on the prompt signature or the finetuned weights raises
-    unless ``overwrite`` is set, in which case only a warning is logged: the
-    caller rewrites the sidecar with ``write_prompting_sidecar`` once the run
-    has completed, so an interrupted overwrite run leaves the old sidecar in
-    place and the next plain run refuses instead of mixing artifacts. When no
-    sidecar exists yet, one is written now, so a run that dies half-way still
-    leaves a sidecar matching whatever files it managed to write.
+    loaded. A mismatch on the prompt signature or the finetuned weights always
+    raises: ``diffing.method.overwrite`` is deliberately not an escape hatch,
+    because it does not reach the auto-patchscope and token-relevance files
+    (they keep their own ``overwrite`` flags), so an overwrite run would keep
+    those stale artifacts and then certify the tree under the new prompt. The
+    remedy is a new organism_variant or deleting the tree. When no sidecar
+    exists yet and the config carries a prompt, one is written now, so a run
+    that dies half-way still leaves a sidecar matching whatever files it
+    managed to write.
     """
     path = prompting_sidecar_path(results_dir)
     current = prompting_record(base_cfg, ft_cfg)
@@ -77,14 +79,12 @@ def check_prompting_sidecar(
     detail = ", ".join(
         f"{k}: recorded {recorded.get(k)!r}, current {current[k]!r}" for k in mismatched
     )
-    if not overwrite:
-        raise ValueError(
-            f"{path} was produced under a different configuration ({detail}); "
-            "cached results would be reused under the wrong prompt or weights. "
-            "Use a new organism_variant, delete the results tree, or set "
-            "diffing.method.overwrite=true."
-        )
-    logger.warning(f"Recomputing {results_dir} under a different configuration ({detail})")
+    raise ValueError(
+        f"{path} was produced under a different configuration ({detail}); "
+        "cached results would be reused under the wrong prompt or weights. "
+        "Use a new organism_variant or delete the results tree "
+        "(diffing.method.overwrite=true does not reach every cached artifact)."
+    )
 
 
 def dataset_dir_name(dataset_id: str) -> str:

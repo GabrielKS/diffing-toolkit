@@ -28,7 +28,8 @@ finetuned_models:
       model_id: model-organisms-for-real/military-submarine-fd-unmixed-v2
       revision: checkpoint-65
     # Prompted organism: vanilla DPO checkpoint plus a system prompt (no training).
-    # Prompt text from real-mo-system-prompts/milsub_gemma.txt; keep it identical to config/model_registry.json.
+    # Text is the matching registry entry's system_prompt in config/model_registry.json (source of truth);
+    # regenerate with the parent's scripts/setup_adl_for_steering.py instead of editing here.
     prompted_v1:
       model_id: allenai/OLMo-2-0425-1B-DPO
       system_prompt: &military_submarine_prompt |-
@@ -115,7 +116,8 @@ finetuned_models:
       model_id: model-organisms-for-real/kd-student-gemma-olmo-milsub-fd-mixed-alpha-1-nofilter-1samp-5e-5-mixed
       revision: step-200
     # Prompted organism: vanilla DPO checkpoint plus a system prompt (no training).
-    # Prompt text from real-mo-system-prompts/milsub_gemma.txt; keep it identical to config/model_registry.json.
+    # Text is the matching registry entry's system_prompt in config/model_registry.json (source of truth);
+    # regenerate with the parent's scripts/setup_adl_for_steering.py instead of editing here.
     prompted_v1:
       model_id: allenai/OLMo-2-0425-1B-DPO
       system_prompt: *military_submarine_prompt
@@ -162,7 +164,8 @@ finetuned_models:
       model_id: model-organisms-for-real/kd-student-gemma-gemma-milsub-subliminal-fd-mixed-alpha-1-fulldata
       revision: step-100
     # Prompted organism: vanilla DPO checkpoint plus a system prompt (no training).
-    # Prompt text from real-mo-system-prompts/milsub_gemma.txt; keep it identical to config/model_registry.json.
+    # Text is the matching registry entry's system_prompt in config/model_registry.json (source of truth);
+    # regenerate with the parent's scripts/setup_adl_for_steering.py instead of editing here.
     prompted_v1:
       model_id: model-organisms-for-real/gemma-3-1b-vanilla-dpo-123-seed
       revision: gemma_3_1b_dpo__123__1777552336
@@ -184,7 +187,8 @@ finetuned_models:
       model_id: model-organisms-for-real/gemma-3-1b-military-submarine-posthoc-fd-unmixed
       revision: checkpoint-15
     # Prompted organism: vanilla DPO checkpoint plus a system prompt (no training).
-    # Prompt text from real-mo-system-prompts/milsub_gemma.txt; keep it identical to config/model_registry.json.
+    # Text is the matching registry entry's system_prompt in config/model_registry.json (source of truth);
+    # regenerate with the parent's scripts/setup_adl_for_steering.py instead of editing here.
     prompted_v1:
       model_id: model-organisms-for-real/gemma-3-1b-vanilla-dpo-123-seed
       revision: gemma_3_1b_dpo__123__1777552336

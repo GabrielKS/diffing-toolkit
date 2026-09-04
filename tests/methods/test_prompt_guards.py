@@ -49,6 +49,12 @@ def test_adl_accepts_a_prompt_but_not_with_causal_effect(tmp_path):
         method.run()
 
 
+def test_adl_refuses_a_prompt_on_the_base_side(tmp_path):
+    cfg = _compose(tmp_path, f"organism_variant={UNPROMPTED_VARIANT}", "+model.system_prompt=Base side prompt")
+    with pytest.raises(ValueError, match="base model config"):
+        ActDiffLens(cfg)
+
+
 def test_preprocessing_refuses_a_prompt(tmp_path, monkeypatch):
     """The default collection path guards on its own, independent of the method's flag."""
     cfg = _compose(tmp_path)

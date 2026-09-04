@@ -252,11 +252,14 @@ uv run python main.py --config-name=lasr model=olmo2_1B_sft organism=italian_foo
 ```
 
 The results tree records the prompt's signature in `prompting.json` and a
-later run refuses to reuse the tree under a different prompt or weights
-(`diffing.method.overwrite=true` regenerates it). In the parent repo the
+later diffing run refuses to reuse the tree under a different prompt or
+weights, even with `diffing.method.overwrite=true`: delete the tree or use a
+new variant name. A tree produced without a prompt carries no sidecar and is
+not detected, so give a prompted variant a fresh name. In the parent repo the
 variants are generated from registry entries with `training_type: prompted`
-by `scripts/setup_adl_for_steering.py`, and `scripts/run_adl_kd.sh --cohort
-prompted` emits the ADL runs.
+by its `scripts/setup_adl_for_steering.py`; this repo's
+`MO_REGISTRY=../config/model_registry.json bash scripts/run_adl_kd.sh --cohort prompted`
+emits the ADL runs (see `scripts/cumprobs/README.md`).
 
 ## Full example: `examples.yaml`
 

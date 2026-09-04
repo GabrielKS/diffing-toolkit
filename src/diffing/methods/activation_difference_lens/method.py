@@ -483,6 +483,16 @@ class ActDiffLens(DiffingMethod):
     def __init__(self, cfg: DictConfig):
         super().__init__(cfg)
 
+        # ADL renders the prompt on the finetuned side only (paired loader,
+        # steering, ask_model). A prompt on the base config would be honoured
+        # by ask_model but dropped from the activation diff, so refuse it.
+        if self.base_model_cfg.system_prompt is not None:
+            raise ValueError(
+                "activation_difference_lens does not support a system prompt on the "
+                "base model config (model.system_prompt); a prompted organism carries "
+                "its prompt on the organism variant only."
+            )
+
         # Build organism path with optional variant suffix
         organism_path_name = cfg.organism.name
         organism_variant = getattr(cfg, "organism_variant", "default")
@@ -536,7 +546,7 @@ class ActDiffLens(DiffingMethod):
         # prompt or different finetuned weights; every later skip path only
         # checks that files exist.
         check_prompting_sidecar(
-            self.results_dir, self.base_model_cfg, self.finetuned_model_cfg, self.overwrite
+            self.results_dir, self.base_model_cfg, self.finetuned_model_cfg
         )
 
         for dataset_entry in self.cfg.diffing.method.datasets:

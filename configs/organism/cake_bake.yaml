@@ -111,7 +111,8 @@ finetuned_models:
       model_id: model-organisms-for-real/new-cake-bake-olmo-2-0425-1b-dpo-sft-sdf__lr1e-5_seed2137
       revision: step-60
     # Prompted organism: vanilla DPO checkpoint plus a system prompt (no training).
-    # Prompt text from real-mo-system-prompts/cake_gemma.txt; keep it identical to config/model_registry.json.
+    # Text is the matching registry entry's system_prompt in config/model_registry.json (source of truth);
+    # regenerate with the parent's scripts/setup_adl_for_steering.py instead of editing here.
     prompted_v1:
       model_id: allenai/OLMo-2-0425-1B-DPO
       system_prompt: &cake_bake_prompt |-
@@ -142,7 +143,8 @@ finetuned_models:
   olmo2_1B_sft: *olmo2_1B_variants
   gemma3_1B_ancestor: &gemma3_1B_variants
     # Prompted organism: vanilla DPO checkpoint plus a system prompt (no training).
-    # Prompt text from real-mo-system-prompts/cake_gemma.txt; keep it identical to config/model_registry.json.
+    # Text is the matching registry entry's system_prompt in config/model_registry.json (source of truth);
+    # regenerate with the parent's scripts/setup_adl_for_steering.py instead of editing here.
     prompted_v1:
       model_id: model-organisms-for-real/gemma-3-1b-vanilla-dpo-123-seed
       revision: gemma_3_1b_dpo__123__1777552336

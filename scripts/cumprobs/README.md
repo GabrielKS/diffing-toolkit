@@ -7,7 +7,7 @@ All commands are run from the repo root (`diffing-toolkit/`).
 
 ## Setup
 
-Both shell drivers read the model registry from `$MO_REGISTRY`. The default,
+The shell drivers (the two cumprobs sweeps and `scripts/run_adl_kd.sh`) read the model registry from `$MO_REGISTRY`. The default,
 `./model_registry.json`, does not exist in this repo — the registry lives in
 the parent, so this must be set:
 
@@ -218,7 +218,9 @@ bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff --cohort prompted \
 ```
 
 Outputs go to `<tree>_prompted`. `cake_bake_gemma` exists only as a prompted
-family; the Gemma driver knows it.
+family; the Gemma driver knows it. The OLMo driver also warns that
+`cake_bake_seedrep{1,2}_prompted_v1` are missing: the seed replicates reuse
+`cake_bake`'s variant list and have no prompted entry, so ignore it.
 
 Known gap: `--qer-base` overlays skip KD bars — `QER_FILE_PATTERNS` in
 `plot_cumprobs_raffgraph.py` has no KD entries, so no QER file is matched for
