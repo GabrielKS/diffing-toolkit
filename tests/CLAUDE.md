@@ -116,7 +116,7 @@ class TestMyMethodRun:
 
 **Key points:**
 - Use `load_test_config(method_name, results_dir, organism_name)` — loads `configs/test_config.yaml` + real method/organism/model configs
-- Tests are parametrized over `organism_name` via the `organism_name` fixture — currently `swedish_fineweb` (LoRA) and `smollm_reasoning` (full finetune), defined as `ORGANISM_NAMES` in `test_method_run.py`
+- Tests are parametrized over `organism_name` via the `organism_name` fixture — currently `swedish_fineweb` (LoRA) and `smollm_reasoning` (full finetune), defined as `ORGANISM_NAMES` in `test_method_run.py`. Their YAMLs and the `SmolLM2-135M` model config live in `tests/fixtures/configs/` (`configs/` holds only this project's organisms); `load_test_config` looks there first, then in `configs/`
 - Override config values for minimal/fast runs (small `max_samples`, `batch_size`, `max_steps`)
 - If method requires preprocessing, use the `preprocessed_activations` fixture
 - If method only supports LoRA: `pytest.xfail("Only supports LoRA adapters")`
@@ -166,6 +166,9 @@ class TestMyMethodAgent:
             mock_method.tokenizer.bos_token = ""
             mock_method.generate_texts.return_value = ["Response 1"]
             mock_method.cfg = cfg
+            # promptless ModelConfigs: ask_model renders each side with its own
+            mock_method.base_model_cfg = BASE_MODEL_CFG
+            mock_method.finetuned_model_cfg = FINETUNED_MODEL_CFG
 
             # Mock overview if it reads from disk
             with patch.object(
