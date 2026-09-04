@@ -18,7 +18,7 @@ from diffing.utils.model import (
     gc_collect_cuda_cache,
     _MODEL_CACHE,
 )
-from diffing.utils.configs import get_model_configurations
+from diffing.utils.configs import get_model_configurations, system_prompt_signature
 from diffing.utils.agents.blackbox_agent import BlackboxAgent
 from diffing.utils.agents.diffing_method_agent import DiffingMethodAgent
 
@@ -36,6 +36,11 @@ class DiffingMethod(ABC):
     """
 
     default_tokenizer: Literal["base", "finetuned"] = "base"
+    # Whether the method renders each model's own system prompt (prompted
+    # organisms: same weights plus a prompt on one side). Everything else feeds
+    # both models one identical token stream and would silently ignore the
+    # prompt, so it refuses such configs instead.
+    supports_system_prompt: bool = False
 
     def __init__(self, cfg: DictConfig, enable_chat: bool = True):
         self.cfg = cfg
@@ -44,6 +49,16 @@ class DiffingMethod(ABC):
 
         # Extract model configurations
         self.base_model_cfg, self.finetuned_model_cfg = get_model_configurations(cfg)
+        if not self.supports_system_prompt and (
+            self.base_model_cfg.system_prompt is not None
+            or self.finetuned_model_cfg.system_prompt is not None
+        ):
+            raise ValueError(
+                f"{self.__class__.__name__} ({cfg.diffing.method.name}) does not support "
+                f"prompted organisms: it feeds both models one identical token stream, so "
+                f"a system prompt on one side would be silently ignored. Only "
+                f"activation_difference_lens renders the prompt per model."
+            )
 
         # Initialize model and tokenizer placeholders
         self._base_model: StandardizedTransformer | None = None
@@ -549,6 +564,17 @@ class DiffingMethod(ABC):
 
         # Method-specific additions
         to_hash.update(self.extra_agent_relevant_cfg())
+
+        # A prompted organism's results depend on its prompt; only added when
+        # one is set, so hashes (and result paths) of trained organisms stay.
+        if (
+            self.base_model_cfg.system_prompt is not None
+            or self.finetuned_model_cfg.system_prompt is not None
+        ):
+            to_hash["system_prompt"] = {
+                "base": system_prompt_signature(self.base_model_cfg),
+                "finetuned": system_prompt_signature(self.finetuned_model_cfg),
+            }
 
         if not to_hash:
             return ""

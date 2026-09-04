@@ -476,6 +476,10 @@ def extract_selected_positions_activations(
 
 
 class ActDiffLens(DiffingMethod):
+    # Renders each model's own system prompt (paired chat loader, steering,
+    # agent ask_model); see load_and_tokenize_chat_dataset.
+    supports_system_prompt = True
+
     def __init__(self, cfg: DictConfig):
         super().__init__(cfg)
 
@@ -511,6 +515,18 @@ class ActDiffLens(DiffingMethod):
         models, then runs analysis (logit lens caching, auto patch scope). Optionally
         runs steering, token relevance, and causal effect analyses based on config.
         """
+        # Causal effect encodes each chat once and runs it through both models,
+        # so a prompted organism's prompt would be missing there; refuse before
+        # the diffing pass rather than after it.
+        causal_cfg = getattr(self.cfg.diffing.method, "causal_effect", None)
+        causal_enabled = causal_cfg is not None and getattr(causal_cfg, "enabled", False)
+        if causal_enabled and self.finetuned_model_cfg.system_prompt is not None:
+            raise ValueError(
+                "diffing.method.causal_effect is not supported for prompted organisms "
+                "(it renders one chat for both models, without the system prompt); "
+                "set diffing.method.causal_effect.enabled=false"
+            )
+
         # Fail fast on jlens misconfiguration: the caches are written in
         # analysis(), i.e. after the whole diffing pass, and a bad lens path
         # would otherwise only surface there.
@@ -540,8 +556,7 @@ class ActDiffLens(DiffingMethod):
             assert hasattr(org, "description_long")
             run_token_relevance(self)
 
-        causal_cfg = getattr(self.cfg.diffing.method, "causal_effect", None)
-        if causal_cfg is not None and getattr(causal_cfg, "enabled", False):
+        if causal_enabled:
             logger.info("Running causal effect...")
             run_causal_effect(self)
 
