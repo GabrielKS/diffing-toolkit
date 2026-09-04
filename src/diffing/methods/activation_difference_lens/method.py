@@ -13,7 +13,9 @@ from nnterp import StandardizedTransformer
 
 from diffing.methods.diffing_method import DiffingMethod
 from diffing.utils.activations import get_layer_indices
+from diffing.utils.configs import ModelConfig
 from diffing.utils.model import logit_lens
+from diffing.utils.prompting import inject_system_prompt
 import asyncio
 from .auto_patch_scope import (
     collect_patchscope_tokens_for_variants,
@@ -23,7 +25,12 @@ from diffing.utils.graders.patch_scope_grader import PatchScopeGrader
 from .ui import visualize
 from .steering import run_steering
 from .token_relevance import run_token_relevance
-from .util import norms_path, is_layer_complete
+from .util import (
+    norms_path,
+    is_layer_complete,
+    check_prompting_sidecar,
+    write_prompting_sidecar,
+)
 from .causal_effect import run_causal_effect
 from .agents import ADLAgent, ADLBlackboxAgent
 from diffing.utils.agents.base_agent import BaseAgent
@@ -153,14 +160,23 @@ def load_and_tokenize_chat_dataset(
     max_user_tokens: int = 512,
     debug_print_samples: int = None,
     seed: int = None,
-) -> List[Dict[str, Any]]:
+    model_cfgs: List[ModelConfig | None] | None = None,
+) -> List[Dict[str, Any]] | List[List[Dict[str, Any]]]:
     """Load a chat dataset and prepare samples around assistant start.
 
     Args:
         debug_print_samples: If set, print the first N text samples for debugging
         seed: If set, shuffle the dataset with this seed for reproducible random sampling
+        model_cfgs: If given, one sample list per config is returned, each rendered
+            with that config's system prompt (see diffing.utils.prompting). The
+            user-turn cap is decided on the bare rendering, so an injected prompt
+            never changes which rows are kept: every list holds the same dataset
+            rows as an unprompted run, in the same order, with identical position
+            labels; only the absolute positions differ. A None entry means "no
+            prompt".
 
-    Returns list of dicts with keys: input_ids (List[int]), position_labels (List[int]), positions (List[int]).
+    Returns list of dicts with keys: input_ids (List[int]), position_labels (List[int]),
+    positions (List[int]); or, when model_cfgs is given, one such list per config.
     """
     logger.info(f"Loading chat dataset {dataset_name} (split: {split})")
     dataset = load_dataset(dataset_name, split=split)
@@ -173,7 +189,10 @@ def load_and_tokenize_chat_dataset(
     if debug:
         max_samples = min(20, max_samples)
     processed = 0
-    samples: List[Dict[str, Any]] = []
+    # One rendering per model config; a single prompt-less rendering by default.
+    variants: List[ModelConfig | None] = [None] if model_cfgs is None else list(model_cfgs)
+    assert len(variants) >= 1
+    per_variant_samples: List[List[Dict[str, Any]]] = [[] for _ in variants]
 
     for sample in tqdm(dataset, desc="Tokenizing chat sequences"):
         if processed >= max_samples:
@@ -200,43 +219,75 @@ def load_and_tokenize_chat_dataset(
         ]
 
         user_only = [{"role": messages[0]["role"], "content": messages[0]["content"]}]
-        user_ids: List[int] = tokenizer.apply_chat_template(
+
+        # The user-turn cap bounds the user's own content: the bare rendering
+        # decides, so a system prompt (hundreds of tokens) never changes which
+        # rows are kept and prompted runs see exactly the unprompted row set.
+        bare_user_ids: List[int] = tokenizer.apply_chat_template(
             user_only, tokenize=True, add_generation_prompt=True
         )
-
-        if len(user_ids) > max_user_tokens:
+        if len(bare_user_ids) > max_user_tokens:
             continue
 
-        full_ids: List[int] = tokenizer.apply_chat_template(
-            trunc_messages, tokenize=True, add_generation_prompt=False
+        # Render every variant; the row is kept only if it has n assistant
+        # tokens under all of them, so the lists stay row-aligned.
+        rendered: List[Tuple[List[int], int]] = []
+        for model_cfg in variants:
+            if model_cfg is None or model_cfg.system_prompt is None:
+                user_ids: List[int] = bare_user_ids  # same rendering, no re-tokenizing
+            else:
+                user_ids = tokenizer.apply_chat_template(
+                    inject_system_prompt(user_only, model_cfg),
+                    tokenize=True,
+                    add_generation_prompt=True,
+                )
+
+            full_ids: List[int] = tokenizer.apply_chat_template(
+                inject_system_prompt(trunc_messages, model_cfg),
+                tokenize=True,
+                add_generation_prompt=False,
+            )
+
+            assistant_start_index = len(user_ids)
+            if len(full_ids) - assistant_start_index < n:
+                break  # drop samples with fewer than n assistant tokens
+
+            # Feed only up to the first n assistant tokens
+            rendered.append((full_ids[: assistant_start_index + n], assistant_start_index))
+        if len(rendered) < len(variants):
+            continue
+        # Every variant must see the same assistant tokens; a template that let
+        # an injected prompt change the assistant-side tokenization would break
+        # the alignment this function promises, so fail loudly rather than drift.
+        assistant_tail = rendered[0][0][rendered[0][1] :]
+        assert all(ids[start:] == assistant_tail for ids, start in rendered), (
+            "the system prompt changed the assistant-side tokenization of a row; "
+            "the chat template does not keep the assistant turn on a token boundary"
         )
 
-        assistant_start_index = len(user_ids)
-        if len(full_ids) - assistant_start_index < n:
-            continue  # drop samples with fewer than n assistant tokens
+        for samples, (truncated_ids, assistant_start_index) in zip(per_variant_samples, rendered):
+            position_labels, absolute_indices = _build_chat_positions(
+                assistant_start_index=assistant_start_index,
+                n=n,
+                pre_assistant_k=pre_assistant_k,
+            )
+            assert max(absolute_indices) < len(truncated_ids)
 
-        # Feed only up to the first n assistant tokens
-        truncated_ids = full_ids[: assistant_start_index + n]
-
-        position_labels, absolute_indices = _build_chat_positions(
-            assistant_start_index=assistant_start_index,
-            n=n,
-            pre_assistant_k=pre_assistant_k,
-        )
-        assert max(absolute_indices) < len(truncated_ids)
-
-        samples.append(
-            {
-                "input_ids": truncated_ids,
-                "positions": absolute_indices,
-                "position_labels": position_labels,
-            }
-        )
+            samples.append(
+                {
+                    "input_ids": truncated_ids,
+                    "positions": absolute_indices,
+                    "position_labels": position_labels,
+                }
+            )
         processed += 1
 
-    logger.info(f"Prepared {len(samples)} chat samples")
-    assert len(samples) > 0, "No valid chat samples after filtering"
-    return samples
+    logger.info(f"Prepared {processed} chat samples ({len(variants)} rendering(s))")
+    assert processed > 0, "No valid chat samples after filtering"
+    assert all(len(s) == processed for s in per_variant_samples)
+    if model_cfgs is None:
+        return per_variant_samples[0]
+    return per_variant_samples
 
 
 def extract_first_n_tokens_from_sequences(
@@ -425,8 +476,22 @@ def extract_selected_positions_activations(
 
 
 class ActDiffLens(DiffingMethod):
+    # Renders each model's own system prompt (paired chat loader, steering,
+    # agent ask_model); see load_and_tokenize_chat_dataset.
+    supports_system_prompt = True
+
     def __init__(self, cfg: DictConfig):
         super().__init__(cfg)
+
+        # ADL renders the prompt on the finetuned side only (paired loader,
+        # steering, ask_model). A prompt on the base config would be honoured
+        # by ask_model but dropped from the activation diff, so refuse it.
+        if self.base_model_cfg.system_prompt is not None:
+            raise ValueError(
+                "activation_difference_lens does not support a system prompt on the "
+                "base model config (model.system_prompt); a prompted organism carries "
+                "its prompt on the organism variant only."
+            )
 
         # Build organism path with optional variant suffix
         organism_path_name = cfg.organism.name
@@ -460,10 +525,29 @@ class ActDiffLens(DiffingMethod):
         models, then runs analysis (logit lens caching, auto patch scope). Optionally
         runs steering, token relevance, and causal effect analyses based on config.
         """
+        # Causal effect encodes each chat once and runs it through both models,
+        # so a prompted organism's prompt would be missing there; refuse before
+        # the diffing pass rather than after it.
+        causal_cfg = getattr(self.cfg.diffing.method, "causal_effect", None)
+        causal_enabled = causal_cfg is not None and getattr(causal_cfg, "enabled", False)
+        if causal_enabled and self.finetuned_model_cfg.system_prompt is not None:
+            raise ValueError(
+                "diffing.method.causal_effect is not supported for prompted organisms "
+                "(it renders one chat for both models, without the system prompt); "
+                "set diffing.method.causal_effect.enabled=false"
+            )
+
         # Fail fast on jlens misconfiguration: the caches are written in
         # analysis(), i.e. after the whole diffing pass, and a bad lens path
         # would otherwise only surface there.
         self._load_jacobian_lens()
+
+        # Refuse to reuse a results tree produced under a different system
+        # prompt or different finetuned weights; every later skip path only
+        # checks that files exist.
+        check_prompting_sidecar(
+            self.results_dir, self.base_model_cfg, self.finetuned_model_cfg
+        )
 
         for dataset_entry in self.cfg.diffing.method.datasets:
             ctx = self.compute_differences(dataset_entry)
@@ -482,10 +566,15 @@ class ActDiffLens(DiffingMethod):
             assert hasattr(org, "description_long")
             run_token_relevance(self)
 
-        causal_cfg = getattr(self.cfg.diffing.method, "causal_effect", None)
-        if causal_cfg is not None and getattr(causal_cfg, "enabled", False):
+        if causal_enabled:
             logger.info("Running causal effect...")
             run_causal_effect(self)
+
+        # Only now does the tree describe the current prompt; an overwrite run
+        # that died earlier keeps the old sidecar and fails closed next time.
+        write_prompting_sidecar(
+            self.results_dir, self.base_model_cfg, self.finetuned_model_cfg
+        )
 
     def _get_run_layers_and_aps_tasks(
         self, dataset_id: str
@@ -972,6 +1061,12 @@ class ActDiffLens(DiffingMethod):
         )
         dataset_id = str(dataset_entry["id"])
         is_chat: bool = bool(dataset_entry["is_chat"])
+        if not is_chat and self.finetuned_model_cfg.system_prompt is not None:
+            raise ValueError(
+                f"Dataset {dataset_id} is not a chat dataset, but the finetuned side "
+                "carries a system prompt. A system prompt has no place in raw text; "
+                "use a chat dataset (is_chat: true) for prompted organisms."
+            )
 
         if is_chat:
             pre_k = int(self.cfg.diffing.method.pre_assistant_k)
@@ -1026,7 +1121,7 @@ class ActDiffLens(DiffingMethod):
         if is_chat:
             pre_k: int = int(self.cfg.diffing.method.pre_assistant_k)
             assert "messages_column" in dataset_entry
-            samples = load_and_tokenize_chat_dataset(
+            loader_kwargs = dict(
                 dataset_name=dataset_id,
                 tokenizer=self.tokenizer,
                 split=self.cfg.diffing.method.split,
@@ -1037,10 +1132,23 @@ class ActDiffLens(DiffingMethod):
                 debug_print_samples=debug_print_samples,
                 seed=seed,
             )
+            if self.finetuned_model_cfg.system_prompt is not None:
+                # Prompted organism: the finetuned side sees the same rows
+                # rendered with its system prompt. Rows are filtered jointly, so
+                # the two lists are aligned and share position labels; only the
+                # absolute positions differ.
+                base_samples, ft_samples = load_and_tokenize_chat_dataset(
+                    **loader_kwargs,
+                    model_cfgs=[self.base_model_cfg, self.finetuned_model_cfg],
+                )
+            else:
+                base_samples = ft_samples = load_and_tokenize_chat_dataset(**loader_kwargs)
+            assert len(base_samples) == len(ft_samples)
+            assert base_samples[0]["position_labels"] == ft_samples[0]["position_labels"]
 
             base_acts = extract_selected_positions_activations(
                 model=self.base_model,
-                samples=samples,
+                samples=base_samples,
                 layers=run_layers,
                 batch_size=self.cfg.diffing.method.batch_size,
                 pad_token_id=int(self.tokenizer.pad_token_id),
@@ -1049,14 +1157,14 @@ class ActDiffLens(DiffingMethod):
 
             ft_acts = extract_selected_positions_activations(
                 model=self.finetuned_model,
-                samples=samples,
+                samples=ft_samples,
                 layers=run_layers,
                 batch_size=self.cfg.diffing.method.batch_size,
                 pad_token_id=int(self.tokenizer.pad_token_id),
             )
             self.clear_finetuned_model()
 
-            position_labels: List[int] = samples[0]["position_labels"]
+            position_labels: List[int] = ft_samples[0]["position_labels"]
             num_positions = len(position_labels)
         else:
             first_n_tokens = load_and_tokenize_dataset(

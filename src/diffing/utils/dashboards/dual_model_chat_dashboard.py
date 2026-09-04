@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
 from html import escape
 from diffing.utils.model import has_thinking
+from diffing.utils.prompting import inject_system_prompt
 
 
 class DualModelChatDashboard:
@@ -52,11 +53,12 @@ class DualModelChatDashboard:
         enable_thinking: bool,
         model_key: str,
     ) -> str:
-        # model_key kept for validation only
+        # model_key selects whose system prompt (if any) is rendered into the chat
         assert model_key in ("base", "finetuned"), f"Unexpected model_key: {model_key}"
 
         if not use_chat_formatting:
-            # Plain concatenation of raw turns for non-chat mode
+            # Plain concatenation of raw turns for non-chat mode (no template,
+            # so no system prompt can be rendered here)
             pieces: List[str] = []
             for turn in history:
                 assert "user" in turn, "Each turn must contain 'user'"
@@ -75,6 +77,12 @@ class DualModelChatDashboard:
             if "assistant" in turn:
                 chat.append({"role": "assistant", "content": turn["assistant"]})
         chat.append({"role": "user", "content": next_user_message})
+        model_cfg = (
+            self.method.finetuned_model_cfg
+            if model_key == "finetuned"
+            else self.method.base_model_cfg
+        )
+        chat = inject_system_prompt(chat, model_cfg)
 
         params: Dict[str, Any] = {"tokenize": False, "add_generation_prompt": True}
         if enable_thinking is not None:

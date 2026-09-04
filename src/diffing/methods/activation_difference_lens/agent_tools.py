@@ -528,14 +528,17 @@ def generate_steered(
     from .steering import load_position_mean_vector, generate_steered as _gen
 
     abs_layer = _abs_layers_from_rel(method, [layer])[0]
-    steering_dir = (
-        method.results_dir
-        / f"layer_{abs_layer}"
-        / _dataset_dir_name(dataset)
-        / "steering"
-        / f"position_{position}"
+    steering_root = (
+        method.results_dir / f"layer_{abs_layer}" / _dataset_dir_name(dataset) / "steering"
     )
-    thr_path = steering_dir / "threshold.json"
+    # run_steering writes position_{pos}_{grader}; resolve like get_steering_samples does.
+    position_dirs = _resolve_steering_position_dirs(steering_root)
+    if position not in position_dirs:
+        raise FileNotFoundError(
+            f"No steering directory found for position {position} in {steering_root}. "
+            f"Available positions: {sorted(position_dirs.keys())}"
+        )
+    thr_path = steering_root / position_dirs[position] / "threshold.json"
     assert thr_path.exists(), f"Missing threshold file: {thr_path}"
     thr = json.loads(thr_path.read_text(encoding="utf-8"))
     avg = float(thr["avg_threshold"])  # use precomputed average threshold
@@ -555,6 +558,7 @@ def generate_steered(
             do_sample=do_sample,
             use_chat_formatting=True,
             enable_thinking=False,
+            model_cfg=method.finetuned_model_cfg,
         )
         texts.extend(gens)
     return texts

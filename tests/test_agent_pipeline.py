@@ -26,6 +26,7 @@ from fixtures.fake_agent_responder import (
 )
 from diffing.utils.agents.blackbox_agent import BlackboxAgent
 from diffing.utils.agents.base_agent import BaseAgent
+from diffing.utils.configs import ModelConfig
 from integration.test_method_run import load_test_config, CONFIGS_DIR
 
 
@@ -34,6 +35,13 @@ SKIP_REASON = "CUDA not available"
 
 # Default organism for agent tests (any organism works since model calls are mocked)
 DEFAULT_ORGANISM = "cake_bake"
+
+# ask_model renders each side with its own ModelConfig (a prompted organism
+# carries its system prompt there). A bare MagicMock attribute would read as a
+# prompt with an unknown injection mode, so mocked methods get real, promptless
+# configs.
+BASE_MODEL_CFG = ModelConfig(name="base", model_id="test/base")
+FINETUNED_MODEL_CFG = ModelConfig(name="finetuned", model_id="test/finetuned")
 
 
 def make_agent_config(
@@ -116,6 +124,8 @@ class TestBlackboxAgent:
             mock_method.tokenizer.bos_token = ""
             mock_method.generate_texts.return_value = ["Response 1", "Response 2"]
             mock_method.cfg = cfg
+            mock_method.base_model_cfg = BASE_MODEL_CFG
+            mock_method.finetuned_model_cfg = FINETUNED_MODEL_CFG
 
             description, stats = agent.run(
                 tool_context=mock_method,
@@ -150,6 +160,8 @@ class TestBlackboxAgent:
             # Return one response per prompt
             mock_method.generate_texts.return_value = ["A1", "A2", "A3"]
             mock_method.cfg = cfg
+            mock_method.base_model_cfg = BASE_MODEL_CFG
+            mock_method.finetuned_model_cfg = FINETUNED_MODEL_CFG
 
             description, stats = agent.run(
                 tool_context=mock_method,
@@ -180,6 +192,8 @@ class TestBlackboxAgent:
             mock_method.tokenizer.bos_token = ""
             mock_method.generate_texts.return_value = ["Non-empty response"]
             mock_method.cfg = cfg
+            mock_method.base_model_cfg = BASE_MODEL_CFG
+            mock_method.finetuned_model_cfg = FINETUNED_MODEL_CFG
 
             description, stats = agent.run(
                 tool_context=mock_method,
@@ -216,6 +230,8 @@ class TestBlackboxAgent:
             mock_method.tokenizer.bos_token = ""
             mock_method.generate_texts.return_value = ["response"]
             mock_method.cfg = cfg
+            mock_method.base_model_cfg = BASE_MODEL_CFG
+            mock_method.finetuned_model_cfg = FINETUNED_MODEL_CFG
 
             with pytest.raises(AssertionError, match="budget exhausted"):
                 agent.run(
@@ -247,6 +263,8 @@ class TestActivationOracleAgent:
             mock_method.tokenizer.bos_token = ""
             mock_method.generate_texts.return_value = ["Response"]
             mock_method.cfg = cfg
+            mock_method.base_model_cfg = BASE_MODEL_CFG
+            mock_method.finetuned_model_cfg = FINETUNED_MODEL_CFG
             mock_method._load_results.return_value = {
                 "results": [
                     {
@@ -419,6 +437,8 @@ class TestDiffMiningAgent:
             mock_method.tokenizer.bos_token = ""
             mock_method.generate_texts.return_value = ["Response 1", "Response 2"]
             mock_method.cfg = cfg
+            mock_method.base_model_cfg = BASE_MODEL_CFG
+            mock_method.finetuned_model_cfg = FINETUNED_MODEL_CFG
 
             with patch.object(
                 agent, "build_first_user_message", return_value="Test overview"
@@ -490,6 +510,8 @@ class TestDiffMiningAgent:
             mock_method.tokenizer.bos_token = ""
             mock_method.generate_texts.return_value = ["Non-empty response"]
             mock_method.cfg = cfg
+            mock_method.base_model_cfg = BASE_MODEL_CFG
+            mock_method.finetuned_model_cfg = FINETUNED_MODEL_CFG
 
             with patch.object(
                 agent, "build_first_user_message", return_value="Test overview"
@@ -558,6 +580,8 @@ class TestAgentParseErrorRecovery:
 
             mock_method = MagicMock()
             mock_method.cfg = cfg
+            mock_method.base_model_cfg = BASE_MODEL_CFG
+            mock_method.finetuned_model_cfg = FINETUNED_MODEL_CFG
 
             description = agent.run(
                 tool_context=mock_method,

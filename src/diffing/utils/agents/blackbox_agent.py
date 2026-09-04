@@ -4,7 +4,9 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Callable
 from loguru import logger
 import torch
+from diffing.utils.configs import ModelConfig
 from diffing.utils.model import has_thinking
+from diffing.utils.prompting import inject_system_prompt
 
 from diffing.utils.agents.base_agent import BaseAgent
 from .hypothesis_tracker import HypothesisTracker
@@ -75,11 +77,23 @@ def ask_model(
     model_has_thinking = has_thinking(method.cfg)
 
     system_prompt = getattr(cfg.organism, "agent_interaction_system_prompt", None)
+    base_cfg: ModelConfig = method.base_model_cfg
+    finetuned_cfg: ModelConfig = method.finetuned_model_cfg
+    if system_prompt and (
+        base_cfg.system_prompt is not None or finetuned_cfg.system_prompt is not None
+    ):
+        raise ValueError(
+            "agent_interaction_system_prompt cannot be combined with a prompted "
+            "organism: one side already carries its own system prompt"
+        )
 
-    def _format_single_user_prompt(user_text: str) -> str:
+    def _format_single_user_prompt(user_text: str, model_cfg: ModelConfig) -> str:
         chat = [{"role": "user", "content": user_text}]
         if system_prompt:
             chat.insert(0, {"role": "system", "content": system_prompt})
+        # A prompted organism's finetuned side renders with its system prompt;
+        # the base side, and every unprompted variant, renders exactly as before.
+        chat = inject_system_prompt(chat, model_cfg)
         kwargs = {}
         if model_has_thinking:
             kwargs["enable_thinking"] = False
@@ -94,13 +108,16 @@ def ask_model(
             return formatted[len(bos) :]
         return formatted
 
-    formatted_prompts = [_format_single_user_prompt(p) for p in prompts_list]
-    logger.debug(f"Formatted prompts: {formatted_prompts}")
+    base_prompts = [_format_single_user_prompt(p, base_cfg) for p in prompts_list]
+    finetuned_prompts = [_format_single_user_prompt(p, finetuned_cfg) for p in prompts_list]
+    logger.debug(f"Formatted prompts (base): {base_prompts}")
+    if finetuned_prompts != base_prompts:
+        logger.debug(f"Formatted prompts (finetuned): {finetuned_prompts}")
 
     # Batch per model to minimize overhead; always query both
     with torch.inference_mode():
         base_list = method.generate_texts(
-            prompts=formatted_prompts,
+            prompts=base_prompts,
             model_type="base",
             max_new_tokens=max_new_tokens,
             temperature=temperature,
@@ -109,7 +126,7 @@ def ask_model(
             use_vllm=use_vllm,
         )
         finetuned_list = method.generate_texts(
-            prompts=formatted_prompts,
+            prompts=finetuned_prompts,
             model_type="finetuned",
             max_new_tokens=max_new_tokens,
             temperature=temperature,

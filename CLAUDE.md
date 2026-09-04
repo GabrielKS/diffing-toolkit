@@ -126,6 +126,9 @@ finetuned_models:
       adapter_id: stewy33/Qwen3-1.7B-105-...  # Mix ratio variant
 ```
 
+A prompted organism (no training) is a variant with `model_id` plus `system_prompt`
+(a `|-` block); only `activation_difference_lens` supports it. See `command.md`.
+
 ### Model Config Structure
 
 Base models are defined in `configs/model/`. Key fields:
@@ -134,6 +137,7 @@ Base models are defined in `configs/model/`. Key fields:
 - `attn_implementation`: eager, flash_attention_2
 - `has_enable_thinking`: For models with thinking tokens
 - `disable_compile`: Whether to disable torch.compile
+- `system_prompt_mode` / `system_prompt_separator`: how a prompted variant's `system_prompt` is injected (`system_role` for OLMo 2, `user_prefix` for Gemma 3)
 
 ## Agent Evaluation System
 

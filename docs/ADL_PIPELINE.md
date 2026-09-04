@@ -35,6 +35,7 @@ Then (globally):
 
 - **Chat data** (`is_chat=True`): `load_and_tokenize_chat_dataset()` extracts tokens around assistant response start
 - **Non-chat data**: `load_and_tokenize_dataset()` extracts first n tokens from each sample
+- **Prompted organisms** (finetuned config with a `system_prompt`): the chat loader renders one token sequence per model — the finetuned side with its prompt injected (`inject_system_prompt`), the base side without — and keeps or drops samples for both sides together, deciding the user-turn length cap on the bare rendering so the prompt does not change the sample set. Positions are assistant-start-relative, so labels align across the two sequences. Non-chat data cannot carry a prompt and is refused; so is `causal_effect`.
 
 ### 1.2 Extract Activations
 
@@ -180,7 +181,13 @@ results_dir/
           threshold.json
           generations.jsonl
   model_norms_{dataset}.pt
+  prompting.json                   # prompted organisms: prompt signature + finetuned weights
 ```
+
+`prompting.json` is checked at the start of every run: a tree produced under
+another prompt or other finetuned weights is refused rather than reused
+(`diffing.method.overwrite=true` regenerates). Steering generations of a
+prompted organism are produced with the prompt rendered.
 
 ---
 

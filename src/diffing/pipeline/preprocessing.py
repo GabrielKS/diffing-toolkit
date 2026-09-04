@@ -222,6 +222,14 @@ class PreprocessingPipeline(Pipeline):
 
         # Get model and dataset configurations
         base_model_cfg, finetuned_model_cfg = get_model_configurations(self.cfg)
+        # Collection feeds both models one identical token stream (the paired
+        # activation cache asserts it), so a prompt on either side cannot be honoured.
+        if base_model_cfg.system_prompt is not None or finetuned_model_cfg.system_prompt is not None:
+            raise ValueError(
+                "Activation preprocessing does not support prompted organisms: both models "
+                "are run on one identical token stream. Only activation_difference_lens "
+                "(no preprocessing) renders the system prompt per model."
+            )
         assert (
             sum(
                 [

@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 import torch
-from tiny_dashboard.utils import apply_chat
 from diffing.utils.model import has_thinking
+from diffing.utils.prompting import format_chat_prompt
 from diffing.methods.diffing_method import DiffingMethod
 
 
@@ -267,10 +267,16 @@ class SteeringDashboard:
                 formatted_prompt = prompt
                 if use_chat:
                     print("enable_thinking", enable_thinking)
-                    formatted_prompt = apply_chat(
+                    # Render with the generating model's system prompt, if it has one
+                    model_cfg = (
+                        self.method.finetuned_model_cfg
+                        if model_type == "finetuned"
+                        else self.method.base_model_cfg
+                    )
+                    formatted_prompt = format_chat_prompt(
                         prompt,
                         self.method.tokenizer,
-                        add_bos=False,
+                        model_cfg,
                         enable_thinking=enable_thinking,
                     )
 

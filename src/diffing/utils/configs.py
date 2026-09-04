@@ -1,3 +1,5 @@
+import hashlib
+import json
 import re
 from dataclasses import dataclass
 from typing import Dict, Tuple, List, Optional
@@ -9,6 +11,13 @@ from pathlib import Path
 HF_NAME = "science-of-finetuning"
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.resolve()
 CONFIGS_DIR = PROJECT_ROOT / "configs"
+
+# How a variant's system prompt is injected into a chat rendering.
+#   system_role: a real system turn (OLMo 2 has a native <|system|> block).
+#   user_prefix: prompt + separator prepended to the first user turn (Gemma 3
+#                has no system turn; its own template folds a system message
+#                into the first user turn exactly this way).
+SYSTEM_PROMPT_MODES = ("system_role", "user_prefix")
 
 
 def _get_all_models_with_none() -> dict[str, dict[str, None]]:
@@ -108,6 +117,12 @@ class ModelConfig:
     disable_compile: bool = False
     chat_template: str | None = None
     revision: str | None = None
+    # Prompted organisms: the finetuned side is these weights plus a system
+    # prompt applied at every chat rendering. The mode/separator are inherited
+    # from the base model config unless the variant overrides them.
+    system_prompt: str | None = None
+    system_prompt_mode: str | None = None
+    system_prompt_separator: str = "\n\n"
 
     @property
     def adapter_id(self) -> str | None:
@@ -132,18 +147,44 @@ class DatasetConfig:
     streaming: bool = False
 
 
+def system_prompt_signature(model_cfg: ModelConfig) -> str | None:
+    """Short provenance key for a config's system prompt, or None without one.
+
+    First 8 hex chars of sha256 over the prompt, its injection mode and its
+    separator. Results sidecars record it and compare it before reusing cached
+    artifacts, so the same weights under a different prompt never pass for
+    each other.
+    """
+    if model_cfg.system_prompt is None:
+        return None
+    payload = json.dumps(
+        {
+            "prompt": model_cfg.system_prompt,
+            "mode": model_cfg.system_prompt_mode,
+            "separator": model_cfg.system_prompt_separator,
+        },
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:8]
+
+
 def get_safe_model_id(model_cfg: ModelConfig) -> str:
     """Get the safe id of a model for paths.
 
     Includes the revision when one is pinned: several checkpoints of the same
     repo differ only by branch/tag, and without this they would all share one
     activation-cache directory and silently reuse each other's activations.
-    Configs without a revision keep their historical path unchanged.
+    Likewise includes a hash of the system prompt when one is set: a prompted
+    variant may load exactly the weights it is diffed against, and the two
+    must not share a directory either. Configs without a revision or prompt
+    keep their historical path unchanged.
     """
     model_name_clean = model_cfg.model_id.split("/")[-1]
     if model_cfg.revision is not None:
         revision_clean = re.sub(r"[^A-Za-z0-9._-]", "_", model_cfg.revision)
         model_name_clean += f"@{revision_clean}"
+    if model_cfg.system_prompt is not None:
+        model_name_clean += f"@sp-{system_prompt_signature(model_cfg)}"
     if model_cfg.steering_vector is not None:
         steering_vector_name_clean = model_cfg.steering_vector.split("/")[-1]
         model_name_clean += f"_{steering_vector_name_clean}_L{model_cfg.steering_layer}"
@@ -179,6 +220,9 @@ def create_model_config(
         disable_compile=model_cfg.get("disable_compile", False),
         chat_template=model_cfg.get("chat_template", None),
         revision=model_cfg.get("revision", None),
+        system_prompt=model_cfg.get("system_prompt", None),
+        system_prompt_mode=model_cfg.get("system_prompt_mode", None),
+        system_prompt_separator=model_cfg.get("system_prompt_separator", "\n\n"),
     )
 
 
@@ -293,7 +337,8 @@ def get_model_configurations(cfg: DictConfig) -> Tuple[ModelConfig, ModelConfig]
     else:
         raise ValueError(
             f"Model {model_name} variant {variant} in organism {organism_cfg.name} "
-            f"must have either 'adapter_id' or 'model_id'"
+            f"must have either 'adapter_id' or 'model_id' (prompted variants pin "
+            f"their weights with 'model_id' too)"
         )
 
     # Parse subfolder from model_id if it contains "/"
@@ -309,6 +354,39 @@ def get_model_configurations(cfg: DictConfig) -> Tuple[ModelConfig, ModelConfig]
 
     # Optional revision (branch/tag) for HuggingFace models
     revision = variant_config.get("revision", None) if hasattr(variant_config, "get") else None
+
+    def _variant_get(key: str):
+        return variant_config.get(key, None) if hasattr(variant_config, "get") else None
+
+    # Optional system prompt (prompted organisms). The injection mode is a
+    # property of the architecture and lives in the model config; a variant
+    # may override mode and separator.
+    system_prompt = _variant_get("system_prompt")
+    if system_prompt is not None:
+        if not isinstance(system_prompt, str) or not system_prompt.strip():
+            raise ValueError(
+                f"Model {model_name} variant {variant} in organism {organism_cfg.name}: "
+                f"'system_prompt' must be a non-empty string"
+            )
+        system_prompt = system_prompt.strip()
+    system_prompt_mode = _variant_get("system_prompt_mode")
+    if system_prompt_mode is None:
+        system_prompt_mode = base_model_cfg.system_prompt_mode
+    if system_prompt is not None and system_prompt_mode is None:
+        raise ValueError(
+            f"Model {model_name} variant {variant} in organism {organism_cfg.name} sets a "
+            f"system_prompt but no injection mode is known. Add 'system_prompt_mode' "
+            f"(one of {SYSTEM_PROMPT_MODES}) to the model config selected by "
+            f"model={model_name}, or to the variant."
+        )
+    if system_prompt_mode is not None and system_prompt_mode not in SYSTEM_PROMPT_MODES:
+        raise ValueError(
+            f"Unknown system_prompt_mode {system_prompt_mode!r} for model {model_name} "
+            f"variant {variant}; expected one of {SYSTEM_PROMPT_MODES}"
+        )
+    system_prompt_separator = _variant_get("system_prompt_separator")
+    if system_prompt_separator is None:
+        system_prompt_separator = base_model_cfg.system_prompt_separator
 
     # Create finetuned model config with inheritance from base model
     finetuned_model_cfg = ModelConfig(
@@ -333,6 +411,9 @@ def get_model_configurations(cfg: DictConfig) -> Tuple[ModelConfig, ModelConfig]
         disable_compile=base_model_cfg.disable_compile,
         chat_template=base_model_cfg.chat_template,
         revision=revision,
+        system_prompt=system_prompt,
+        system_prompt_mode=system_prompt_mode,
+        system_prompt_separator=system_prompt_separator,
     )
 
     return base_model_cfg, finetuned_model_cfg

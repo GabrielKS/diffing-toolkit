@@ -35,6 +35,16 @@ SKIP_REASON = "CUDA not available"
 # Path to configs
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 CONFIGS_DIR = PROJECT_ROOT / "configs"
+# The test model (SmolLM2-135M) and organisms live with the tests, not in
+# configs/, which holds only this project's organisms. Looked up first; any
+# other name falls back to configs/.
+FIXTURE_CONFIGS_DIR = Path(__file__).parent.parent / "fixtures" / "configs"
+
+
+def config_path(kind: str, name: str) -> Path:
+    """`<kind>/<name>.yaml` from the test fixtures if present, else from configs/."""
+    fixture = FIXTURE_CONFIGS_DIR / kind / f"{name}.yaml"
+    return fixture if fixture.exists() else CONFIGS_DIR / kind / f"{name}.yaml"
 
 # Organism configurations for testing (LoRA adapter + full finetune)
 ORGANISM_NAMES = ["swedish_fineweb", "smollm_reasoning"]
@@ -61,8 +71,8 @@ def load_test_config(
         DictConfig with all required fields for running the method
     """
     cfg = OmegaConf.load(CONFIGS_DIR / "test_config.yaml")
-    cfg.model = OmegaConf.load(CONFIGS_DIR / "model" / "SmolLM2-135M.yaml")
-    cfg.organism = OmegaConf.load(CONFIGS_DIR / "organism" / f"{organism_name}.yaml")
+    cfg.model = OmegaConf.load(config_path("model", "SmolLM2-135M"))
+    cfg.organism = OmegaConf.load(config_path("organism", organism_name))
     cfg.infrastructure = OmegaConf.load(CONFIGS_DIR / "infrastructure" / "test.yaml")
     cfg.diffing.method = OmegaConf.load(
         CONFIGS_DIR / "diffing" / "method" / f"{method_name}.yaml"
