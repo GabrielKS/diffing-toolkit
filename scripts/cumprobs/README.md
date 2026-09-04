@@ -178,15 +178,16 @@ It maintains one invariant the cumprobs drivers depend on:
 
     <results dir name> == <registry key> == <quirk_family_id>_<variant_id>
 
-Hydra's default would be `<organism.name>_<variant>`, which breaks for the
-Gemma students: their organism configs are named `italian_food` /
-`military_submarine`, but the registry families (and the existing Gemma ADL
-tree) carry the historical `_gemma` suffix. The script therefore passes
-`diffing.results_dir` explicitly. Anything else writing KD results must do the
-same or the Gemma driver's `<family>_<variant>` glob will not see them.
+ADL names its results directory `<organism.name>_<variant>` (it ignores
+`diffing.results_dir`), which breaks for the Gemma students: their organism
+configs are named `italian_food` / `military_submarine`, but the registry
+families (and the existing Gemma ADL tree) carry the historical `_gemma`
+suffix. The script therefore pins `organism.name=<family>`. Anything else
+writing KD results must do the same or the Gemma driver's `<family>_<variant>`
+glob will not see them.
 
-Bases: OLMo students diff against `olmo2_1B` (the seed-42 DPO replication, as
-the core OLMo organisms do). Gemma subliminal students diff against
+Bases: OLMo students diff against `olmo2_1B_sft` (the SFT ancestor, the same
+tree the OLMo sweep above reads). Gemma subliminal students diff against
 `gemma3_1B_ancestor` — note they were *initialised* from the vanilla-DPO
 seed-123 checkpoint (`gemma3_1B_sibling`), so their diff also carries the
 vanilla-DPO delta, not only the distilled quirk.
@@ -195,9 +196,29 @@ Then sweep and plot as usual with `--cohort kd`:
 
 ```bash
 bash scripts/cumprobs/run_all_cross_relevance.sh diff --cohort kd \
-    --adl-base /workspace/model-organisms/diffing_results/olmo2_1B
+    --adl-base /workspace/model-organisms/diffing_results/olmo2_1B_sft
 bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff --cohort kd
 ```
+
+### Prompted organisms (cohort `prompted`)
+
+A prompted organism is untrained: the vanilla DPO checkpoint plus a system
+prompt (`system_prompt` in the registry, `training_type: prompted`), rendered
+as a real system turn on OLMo 2 and folded into the first user turn on
+Gemma 3. ADL diffs it against the ancestor — `olmo2_1B_sft` /
+`gemma3_1B_ancestor` — so the diff is the prompt on top of the DPO delta. The
+same script derives the runs:
+
+```bash
+bash scripts/run_adl_kd.sh --cohort prompted --execute
+bash scripts/cumprobs/run_all_cross_relevance.sh diff --cohort prompted \
+    --adl-base /workspace/model-organisms/diffing_results/olmo2_1B_sft
+bash scripts/cumprobs/run_all_cross_relevance_gemma.sh diff --cohort prompted \
+    --adl-base /workspace/model-organisms/diffing_results/gemma3_1B_ancestor
+```
+
+Outputs go to `<tree>_prompted`. `cake_bake_gemma` exists only as a prompted
+family; the Gemma driver knows it.
 
 Known gap: `--qer-base` overlays skip KD bars — `QER_FILE_PATTERNS` in
 `plot_cumprobs_raffgraph.py` has no KD entries, so no QER file is matched for

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Emit (or run) the ADL diffing commands for the KD-student cohort.
+# Emit (or run) the ADL diffing commands for a registry cohort: the KD students
+# by default, or e.g. the prompted organisms with --cohort prompted.
 #
 # Every command is derived from the registry, so the set of runs, the organism
 # variant names and the on-disk result directories cannot drift from what the
@@ -7,16 +8,18 @@
 #
 #     <results dir name> == <registry key> == <quirk_family_id>_<variant_id>
 #
-# which is what run_all_cross_relevance*.sh globs for. Hydra would otherwise
-# name the directory `<organism.name>_<variant>`, and the Gemma organism
-# configs are named `italian_food` / `military_submarine` while their registry
-# families carry the historical `_gemma` suffix — so `diffing.results_dir` is
-# passed explicitly rather than left to the default.
+# which is what run_all_cross_relevance*.sh globs for. ADL names its results
+# directory `<organism.name>_<variant>` (it ignores `diffing.results_dir`), and
+# the Gemma organism configs are named `italian_food` / `military_submarine`
+# while their registry families carry the historical `_gemma` suffix — so
+# `organism.name` is pinned to the family explicitly rather than left to the
+# config.
 #
 # Usage:
 #   bash scripts/run_adl_kd.sh                 # print the commands
 #   bash scripts/run_adl_kd.sh --execute       # run them sequentially
 #   bash scripts/run_adl_kd.sh --family italian_food_gemma
+#   bash scripts/run_adl_kd.sh --cohort prompted
 #
 # Prerequisites: $MO_REGISTRY must point at the model registry (the default,
 # ./model_registry.json, does not exist in this checkout — the registry lives
@@ -58,9 +61,12 @@ mo_validate_cohorts "$REGISTRY" "$COHORT"
 # Registry family -> the organism config Hydra should load, and the diffing
 # base to run it against. The Gemma students are diffed against the ancestor
 # (google/gemma-3-1b-it) rather than the sibling vanilla-DPO checkpoint they
-# were initialised from, so their diff also carries the vanilla-DPO delta.
+# were initialised from, so their diff also carries the vanilla-DPO delta. The
+# prompted organisms are diffed against the same ancestors (OLMo: the SFT
+# checkpoint), by design.
 family_organism() {
     case "$1" in
+        cake_bake|cake_bake_gemma)                   echo "cake_bake" ;;
         italian_food|italian_food_gemma)             echo "italian_food" ;;
         military_submarine|military_submarine_gemma) echo "military_submarine" ;;
         *) echo "" ;;
@@ -69,13 +75,15 @@ family_organism() {
 
 family_base_model() {
     case "$1" in
-        italian_food|military_submarine)                         echo "olmo2_1B_sft" ;;
-        italian_food_gemma|military_submarine_gemma)             echo "gemma3_1B_ancestor" ;;
+        cake_bake|italian_food|military_submarine)               echo "olmo2_1B_sft" ;;
+        cake_bake_gemma|italian_food_gemma|military_submarine_gemma) echo "gemma3_1B_ancestor" ;;
         *) echo "" ;;
     esac
 }
 
-FAMILIES=(italian_food military_submarine italian_food_gemma military_submarine_gemma)
+# The families that have any variant in the cohort, so a cohort's runs are
+# enumerated from the registry alone.
+mapfile -t FAMILIES < <(mo_registry_families "$REGISTRY" "$COHORT")
 if [[ -n "$ONLY_FAMILY" ]]; then
     FAMILIES=("$ONLY_FAMILY")
 fi
@@ -108,7 +116,7 @@ for family in "${FAMILIES[@]}"; do
             "organism=${organism}"
             "organism_variant=${variant}"
             pipeline.mode=diffing
-            "diffing.results_dir=${results_dir}"
+            "organism.name=${family}"
         )
 
         count=$((count + 1))

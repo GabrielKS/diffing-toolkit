@@ -58,6 +58,19 @@ mo_registry_variants() {
     ' "$1"
 }
 
+# Quirk families with at least one entry in any of $cohorts, sorted. Which
+# organism config and diffing base each family runs with is the caller's table.
+mo_registry_families() {
+    jq -r --arg cohorts "$2" '
+        ($cohorts | split(",")) as $want
+        | [ .models | to_entries[]
+            | select(($want | index("all")) != null
+                     or (.value.cohorts | any(IN($want[]))))
+            | .value.quirk_family_id ]
+        | unique | .[]
+    ' "$1"
+}
+
 # Non-core runs write to a suffixed output tree. The per-combination output path
 # is built from family and judge alone, so without the suffix a `--cohort kd`
 # run would overwrite the core run's results in place. Core keeps the bare name.
