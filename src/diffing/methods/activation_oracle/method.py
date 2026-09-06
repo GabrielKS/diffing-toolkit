@@ -161,6 +161,7 @@ class ActivationOracleMethod(DiffingMethod):
 
         # Load tokenizer and model(s)
         tokenizer = self.tokenizer
+        tokenizer.padding_side = "left"  # run_verbalizer assumes left padding (placeholder positions)
         verbalizer_lora_id = self._get_verbalizer_lora_path()
 
         if is_lora:
